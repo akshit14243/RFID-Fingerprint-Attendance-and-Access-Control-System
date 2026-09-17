@@ -1,0 +1,973 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Attendance & Access Control — Admin Console</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
+<style>
+  :root{
+    --bg:#0b1220; --surface:#141c2f; --surface-2:#1a2438; --border:#26314a;
+    --text:#e7ebf5; --text-dim:#8d97ad; --text-faint:#5c6680;
+    --primary:#4c6fff; --primary-dim:#2a3d8f;
+    --teal:#2dd4bf; --teal-bg:#0e2e2a;
+    --amber:#f5a524; --amber-bg:#332208;
+    --rose:#f5738a; --rose-bg:#331119;
+    --radius:10px;
+  }
+  [data-theme="light"]{
+    --bg:#f4f6fb; --surface:#ffffff; --surface-2:#eef1f8; --border:#dde3ef;
+    --text:#1c2333; --text-dim:#5b6479; --text-faint:#98a1b5;
+    --primary:#3454d1; --primary-dim:#dde5ff;
+    --teal:#0f8f7a; --teal-bg:#e1f5f0;
+    --amber:#b8710a; --amber-bg:#fdf1dd;
+    --rose:#c23b57; --rose-bg:#fbe6ea;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    background:var(--bg); color:var(--text);
+    font-family:'Inter',system-ui,sans-serif;
+    -webkit-font-smoothing:antialiased;
+  }
+  .mono{font-family:'JetBrains Mono',monospace;}
+  #root{min-height:100vh;}
+  ::selection{background:var(--primary); color:#fff;}
+  button{font-family:inherit;}
+  input,select{font-family:inherit;}
+  ::-webkit-scrollbar{width:8px; height:8px;}
+  ::-webkit-scrollbar-thumb{background:var(--border); border-radius:8px;}
+  @keyframes flashIn { from { background: var(--primary-dim); } to { background: transparent; } }
+  .flash-row { animation: flashIn 1.4s ease-out; }
+  .modal-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,0.6); display: flex; align-items: center; justify-content: center; z-index: 1000; padding: 20px; }
+  .modal-box { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; width: 100%; max-width: 480px; padding: 24px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script type="text/babel" data-presets="react">
+const {useState, useMemo, useEffect, useCallback} = React;
+
+const API = location.port === "3000" || location.protocol === "file:"
+  ? (location.protocol === "file:" ? "http://127.0.0.1:3000" : location.origin)
+  : location.origin;
+
+const NAV = [
+  {key:"dashboard", label:"Dashboard", icon:"grid"},
+  {key:"employees", label:"Employees", icon:"users"},
+  {key:"attendance", label:"Attendance", icon:"clock"},
+  {key:"devices", label:"Devices", icon:"cpu"},
+  {key:"admin", label:"Admin panel", icon:"settings"},
+];
+
+/* ---------------- Tiny inline icon set ---------------- */
+function Icon({name, size=18}){
+  const p = {width:size, height:size, viewBox:"0 0 24 24", fill:"none", stroke:"currentColor", strokeWidth:1.8, strokeLinecap:"round", strokeLinejoin:"round"};
+  switch(name){
+    case "grid": return <svg {...p}><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>;
+    case "users": return <svg {...p}><circle cx="9" cy="8" r="3.2"/><path d="M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6"/><circle cx="17" cy="9" r="2.6"/><path d="M21 20c0-2.6-1.7-4.8-4-5.6"/></svg>;
+    case "clock": return <svg {...p}><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.2 2"/></svg>;
+    case "cpu": return <svg {...p}><rect x="6" y="6" width="12" height="12" rx="2"/><path d="M9 2v3M15 2v3M9 19v3M15 19v3M2 9h3M2 15h3M19 9h3M19 15h3"/></svg>;
+    case "settings": return <svg {...p}><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1a2 2 0 1 1 2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.3-1.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.9.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.9-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.9V9c.2.6.7 1 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>;
+    case "sun": return <svg {...p}><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>;
+    case "moon": return <svg {...p}><path d="M20 14.5A8.5 8.5 0 1 1 9.5 4a7 7 0 0 0 10.5 10.5z"/></svg>;
+    case "search": return <svg {...p}><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>;
+    case "plus": return <svg {...p}><path d="M12 5v14M5 12h14"/></svg>;
+    case "download": return <svg {...p}><path d="M12 3v12M7 10l5 5 5-5M5 21h14"/></svg>;
+    case "id": return <svg {...p}><rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="8.5" cy="12" r="2"/><path d="M14 10h5M14 14h5"/></svg>;
+    case "check": return <svg {...p}><path d="M20 6L9 17l-5-5"/></svg>;
+    case "x": return <svg {...p}><path d="M18 6L6 18M6 6l12 12"/></svg>;
+    case "logout": return <svg {...p}><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5"/><path d="M21 12H9"/></svg>;
+    case "chevron": return <svg {...p}><path d="M9 18l6-6-6-6"/></svg>;
+    case "trash": return <svg {...p}><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>;
+    default: return null;
+  }
+}
+
+/* ---------------- Small building blocks ---------------- */
+function StatusBadge({status}){
+  const map = {
+    present:{c:"var(--teal)", bg:"var(--teal-bg)", label:"Present"},
+    late:{c:"var(--amber)", bg:"var(--amber-bg)", label:"Late"},
+    absent:{c:"var(--rose)", bg:"var(--rose-bg)", label:"Absent"},
+    active:{c:"var(--teal)", bg:"var(--teal-bg)", label:"Active"},
+    inactive:{c:"var(--text-faint)", bg:"var(--surface-2)", label:"Inactive"},
+    online:{c:"var(--teal)", bg:"var(--teal-bg)", label:"Online"},
+    offline:{c:"var(--rose)", bg:"var(--rose-bg)", label:"Offline"},
+    ALLOWED:{c:"var(--teal)", bg:"var(--teal-bg)", label:"Allowed"},
+    DENIED:{c:"var(--rose)", bg:"var(--rose-bg)", label:"Denied"},
+  };
+  const s = map[status] || map.inactive;
+  return (
+    <span style={{
+      display:"inline-flex", alignItems:"center", gap:6, fontSize:12, fontWeight:600,
+      color:s.c, background:s.bg, padding:"3px 10px", borderRadius:999,
+    }}>
+      <span style={{width:6, height:6, borderRadius:99, background:s.c}}/>
+      {s.label}
+    </span>
+  );
+}
+
+function Card({children, style}){
+  return (
+    <div style={{
+      background:"var(--surface)", border:"1px solid var(--border)", borderRadius:"var(--radius)",
+      padding:"18px 20px", ...style
+    }}>{children}</div>
+  );
+}
+
+function StatCard({label, value, sub, accent}){
+  return (
+    <Card>
+      <div style={{fontSize:12.5, color:"var(--text-dim)", fontWeight:500, marginBottom:10}}>{label}</div>
+      <div style={{fontSize:28, fontWeight:700, color: accent || "var(--text)", lineHeight:1}}>{value}</div>
+      {sub && <div style={{fontSize:12, color:"var(--text-faint)", marginTop:8}}>{sub}</div>}
+    </Card>
+  );
+}
+
+function Button({children, variant="ghost", onClick, style, type="button", disabled=false}){
+  const base = {
+    padding:"9px 14px", borderRadius:8, fontSize:13.5, fontWeight:600, cursor: disabled?"not-allowed":"pointer",
+    display:"inline-flex", alignItems:"center", gap:7, border:"1px solid var(--border)",
+    transition:"background .12s ease", opacity: disabled ? 0.6 : 1, ...style
+  };
+  const variants = {
+    primary:{background:"var(--primary)", color:"#fff", border:"1px solid var(--primary)"},
+    ghost:{background:"transparent", color:"var(--text)"},
+    subtle:{background:"var(--surface-2)", color:"var(--text)"},
+    danger:{background:"var(--rose)", color:"#fff", border:"1px solid var(--rose)"},
+  };
+  return <button type={type} disabled={disabled} onClick={onClick} style={{...base, ...variants[variant]}}>{children}</button>;
+}
+
+function Th({children}){
+  return <th style={{textAlign:"left", padding:"10px 14px", fontSize:11.5, textTransform:"uppercase", letterSpacing:"0.04em", color:"var(--text-faint)", fontWeight:600, borderBottom:"1px solid var(--border)"}}>{children}</th>;
+}
+function Td({children, mono, style}){
+  return <td className={mono?"mono":""} style={{padding:"11px 14px", fontSize:13.5, borderBottom:"1px solid var(--border)", color:"var(--text)", ...style}}>{children}</td>;
+}
+
+/* ---------------- API Helper ---------------- */
+async function apiCall(path, method="GET", body=null, token="") {
+  const headers = {};
+  if (token) headers["Authorization"] = "Bearer " + token;
+  if (body) headers["Content-Type"] = "application/json";
+
+  const res = await fetch(API + path, {
+    method,
+    headers,
+    body: body ? JSON.stringify(body) : null,
+  });
+
+  if (res.status === 401) {
+    sessionStorage.clear();
+    window.location.reload();
+    throw new Error("Session expired");
+  }
+
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || data.details || "HTTP " + res.status);
+  return data;
+}
+
+/* ---------------- Pages ---------------- */
+
+function DashboardPage({employees, attendance, activity, occupancy, dateStr}){
+  const total = employees.length;
+  const present = attendance.filter(a => a.first_in).length;
+  const late = attendance.filter(a => {
+    if (!a.first_in) return false;
+    const time = new Date(a.first_in).toLocaleTimeString("en-GB", {hour:"2-digit", minute:"2-digit"});
+    return time > "09:45";
+  }).length;
+  const absent = total > present ? (total - present) : 0;
+  const active = occupancy.count || 0;
+  const pct = total > 0 ? Math.round((present / total) * 100) : 0;
+
+  return (
+    <div>
+      <div style={{display:"grid", gridTemplateColumns:"repeat(auto-fit, minmax(150px,1fr))", gap:14, marginBottom:22}}>
+        <StatCard label="Total employees" value={total} />
+        <StatCard label="Present today" value={present} accent="var(--teal)" />
+        <StatCard label="Late today" value={late} accent="var(--amber)" />
+        <StatCard label="Absent today" value={absent} accent="var(--rose)" />
+        <StatCard label="Currently active" value={active} sub="inside rooms right now" />
+        <StatCard label="Attendance rate" value={pct+"%"} accent="var(--primary)" />
+      </div>
+
+      <div style={{display:"grid", gridTemplateColumns:"1.4fr 1fr", gap:16}}>
+        <Card>
+          <div style={{display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:14}}>
+            <div style={{fontSize:14.5, fontWeight:600}}>Today's attendance</div>
+            <span className="mono" style={{fontSize:12, color:"var(--text-faint)"}}>{dateStr}</span>
+          </div>
+          <div style={{overflowX:"auto"}}>
+            <table style={{width:"100%", borderCollapse:"collapse"}}>
+              <thead><tr>
+                <Th>Employee</Th><Th>Department</Th><Th>Check-in</Th><Th>Check-out</Th><Th>Status</Th>
+              </tr></thead>
+              <tbody>
+                {attendance.length === 0 ? (
+                  <tr><Td colSpan={5} style={{textAlign:"center", color:"var(--text-dim)"}}>No attendance records today yet.</Td></tr>
+                ) : (
+                  attendance.map((a,i)=>{
+                    const inTime = a.first_in ? new Date(a.first_in).toLocaleTimeString([], {hour:"2-digit", minute:"2-digit"}) : "—";
+                    const outTime = a.last_out ? new Date(a.last_out).toLocaleTimeString([], {hour:"2-digit", minute:"2-digit"}) : "—";
+                    let status = "absent";
+                    if (a.first_in) {
+                      const t = new Date(a.first_in).toLocaleTimeString("en-GB", {hour:"2-digit", minute:"2-digit"});
+                      status = t > "09:45" ? "late" : "present";
+                    }
+                    return (
+                      <tr key={i}>
+                        <Td>{a.full_name}</Td>
+                        <Td>{a.department}</Td>
+                        <Td mono>{inTime}</Td>
+                        <Td mono>{outTime}</Td>
+                        <Td><StatusBadge status={status}/></Td>
+                      </tr>
+                    );
+                  })
+                )}
+              </tbody>
+            </table>
+          </div>
+        </Card>
+
+        <Card>
+          <div style={{display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:14}}>
+            <div style={{fontSize:14.5, fontWeight:600}}>Live scan activity</div>
+            <span style={{fontSize:11.5, color:"var(--teal)", display:"flex", alignItems:"center", gap:5}}>
+              <span style={{width:7, height:7, borderRadius:99, background:"var(--teal)"}}></span> live
+            </span>
+          </div>
+          <div style={{display:"flex", flexDirection:"column", gap:0, maxHeight: 380, overflowY: "auto"}}>
+            {activity.length === 0 ? (
+              <div style={{padding:"20px 0", textAlign:"center", color:"var(--text-dim)", fontSize:13}}>Waiting for live scans...</div>
+            ) : (
+              activity.map((a,i)=>(
+                <div key={a.id || i} className={i===0?"flash-row":""} style={{
+                  display:"flex", alignItems:"center", gap:12, padding:"10px 0",
+                  borderBottom: i<activity.length-1 ? "1px solid var(--border)" : "none"
+                }}>
+                  <div style={{
+                    width:34, height:34, borderRadius:8, background:"var(--surface-2)",
+                    display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0
+                  }}><Icon name="id" size={16}/></div>
+                  <div style={{flex:1, minWidth:0}}>
+                    <div style={{fontSize:13, fontWeight:600}}>{a.full_name || a.person_name || "Unknown card"} <span className="mono" style={{color:"var(--text-faint)", fontWeight:400}}>· {a.room_name || "Door"}</span></div>
+                    <div style={{fontSize:12, color:"var(--text-dim)"}}>{a.direction || "SCAN"} &middot; <span className="mono">{a.card_uid || a.reason_code || ""}</span></div>
+                  </div>
+                  <div style={{textAlign:"right"}}>
+                    <div className="mono" style={{fontSize:11.5, color:"var(--text-faint)"}}>
+                      {a.scanned_at ? new Date(a.scanned_at).toLocaleTimeString() : "—"}
+                    </div>
+                    <StatusBadge status={a.decision || (a.status==="present"?"present":"active")}/>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </Card>
+      </div>
+    </div>
+  );
+}
+
+function EmployeesPage({employees, departments, onSelect, onAddClick, onDeleteEmployee}){
+  const [q, setQ] = useState("");
+  const [dept, setDept] = useState("all");
+  const filtered = employees.filter(e =>
+    (dept==="all" || e.department===dept) &&
+    ((e.full_name||"").toLowerCase().includes(q.toLowerCase()) || (e.employee_code||"").toLowerCase().includes(q.toLowerCase()))
+  );
+
+  return (
+    <Card style={{padding:0}}>
+      <div style={{display:"flex", gap:10, alignItems:"center", padding:"16px 18px", borderBottom:"1px solid var(--border)", flexWrap:"wrap"}}>
+        <div style={{position:"relative", flex:"1 1 220px"}}>
+          <span style={{position:"absolute", left:10, top:9, color:"var(--text-faint)"}}><Icon name="search" size={16}/></span>
+          <input value={q} onChange={e=>setQ(e.target.value)} placeholder="Search by name or Employee ID"
+            style={{width:"100%", padding:"9px 12px 9px 34px", borderRadius:8, border:"1px solid var(--border)", background:"var(--surface-2)", color:"var(--text)", fontSize:13.5}}/>
+        </div>
+        <select value={dept} onChange={e=>setDept(e.target.value)}
+          style={{padding:"9px 12px", borderRadius:8, border:"1px solid var(--border)", background:"var(--surface-2)", color:"var(--text)", fontSize:13.5}}>
+          <option value="all">All departments</option>
+          {departments.map(d=><option key={d} value={d}>{d}</option>)}
+        </select>
+        <Button variant="primary" onClick={onAddClick}><Icon name="plus" size={15}/>Add employee</Button>
+      </div>
+      <div style={{overflowX:"auto"}}>
+        <table style={{width:"100%", borderCollapse:"collapse"}}>
+          <thead><tr>
+            <Th>ID</Th><Th>Name</Th><Th>Department</Th><Th>Type</Th><Th>RFID</Th><Th>Fingerprint</Th><Th>Status</Th><Th></Th>
+          </tr></thead>
+          <tbody>
+            {filtered.length === 0 ? (
+              <tr><Td colSpan={8} style={{textAlign:"center", color:"var(--text-dim)"}}>No employees found.</Td></tr>
+            ) : (
+              filtered.map(e=>(
+                <tr key={e.id} style={{cursor:"pointer"}} onClick={()=>onSelect(e)}>
+                  <Td mono>{e.employee_code}</Td>
+                  <Td>{e.full_name}</Td>
+                  <Td>{e.department}</Td>
+                  <Td>{e.person_type || "EMPLOYEE"}</Td>
+                  <Td>{e.card_uid ? <span className="mono" style={{color:"var(--teal)"}}>{e.card_uid}</span> : <span style={{color:"var(--text-faint)"}}>not linked</span>}</Td>
+                  <Td>{e.fingerprint_slot!=null ? <span className="mono" style={{color:"var(--teal)"}}>slot {e.fingerprint_slot}</span> : <span style={{color:"var(--text-faint)"}}>not linked</span>}</Td>
+                  <Td><StatusBadge status={e.is_active ? "active" : "inactive"}/></Td>
+                  <Td><Icon name="chevron" size={15}/></Td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
+    </Card>
+  );
+}
+
+function EmployeeProfile({emp, attendanceHistory, onBack, onDeactivate, token}){
+  const nameParts = (emp.full_name || "Employee").split(" ");
+  const initials = nameParts.length > 1 ? nameParts[0][0] + nameParts[1][0] : nameParts[0].slice(0,2);
+  const presentDays = attendanceHistory.filter(a => a.first_in).length;
+  const pct = attendanceHistory.length ? Math.round((presentDays / attendanceHistory.length) * 100) : 100;
+  const totalHours = attendanceHistory.reduce((acc, a) => acc + (parseFloat(a.hours) || 0), 0).toFixed(1);
+
+  return (
+    <div>
+      <Button variant="ghost" onClick={onBack} style={{marginBottom:14}}>
+        <span style={{transform:"rotate(180deg)", display:"inline-flex"}}><Icon name="chevron" size={15}/></span> Back to employees
+      </Button>
+      <div style={{display:"grid", gridTemplateColumns:"1fr 1.6fr", gap:16}}>
+        <Card>
+          <div style={{display:"flex", alignItems:"center", gap:12, marginBottom:16}}>
+            <div style={{width:48, height:48, borderRadius:"50%", background:"var(--primary-dim)", display:"flex", alignItems:"center", justifyContent:"center", fontWeight:700, color:"var(--primary)", textTransform:"uppercase"}}>
+              {initials}
+            </div>
+            <div>
+              <div style={{fontWeight:700, fontSize:15.5}}>{emp.full_name}</div>
+              <div style={{fontSize:12.5, color:"var(--text-dim)"}}>{emp.person_type} · {emp.department}</div>
+            </div>
+          </div>
+          <div style={{display:"flex", flexDirection:"column", gap:9, fontSize:13}}>
+            <div style={{display:"flex", justifyContent:"space-between"}}><span style={{color:"var(--text-dim)"}}>Employee ID</span><span className="mono">{emp.employee_code}</span></div>
+            <div style={{display:"flex", justifyContent:"space-between"}}><span style={{color:"var(--text-dim)"}}>Email</span><span>{emp.email || "—"}</span></div>
+            <div style={{display:"flex", justifyContent:"space-between"}}><span style={{color:"var(--text-dim)"}}>RFID Card</span>{emp.card_uid ? <span className="mono">{emp.card_uid}</span> : <StatusBadge status="inactive"/>}</div>
+            <div style={{display:"flex", justifyContent:"space-between"}}><span style={{color:"var(--text-dim)"}}>Fingerprint</span>{emp.fingerprint_slot!=null ? <span className="mono">slot {emp.fingerprint_slot}</span> : <StatusBadge status="inactive"/>}</div>
+            <div style={{display:"flex", justifyContent:"space-between"}}><span style={{color:"var(--text-dim)"}}>Status</span><StatusBadge status={emp.is_active ? "active" : "inactive"}/></div>
+          </div>
+
+          <div style={{marginTop: 20, paddingTop: 16, borderTop: "1px solid var(--border)"}}>
+            <Button variant="danger" onClick={()=>onDeactivate(emp)} style={{width:"100%", justifyContent:"center"}}>
+              <Icon name="trash" size={15}/> {emp.is_active ? "Deactivate Employee" : "Reactivate Employee"}
+            </Button>
+          </div>
+        </Card>
+
+        <div style={{display:"flex", flexDirection:"column", gap:16}}>
+          <div style={{display:"grid", gridTemplateColumns:"repeat(3,1fr)", gap:14}}>
+            <StatCard label="Attendance %" value={pct+"%"} accent="var(--primary)"/>
+            <StatCard label="Present days" value={presentDays}/>
+            <StatCard label="Total hours" value={totalHours}/>
+          </div>
+          <Card>
+            <div style={{fontSize:14.5, fontWeight:600, marginBottom:12}}>Attendance history</div>
+            <table style={{width:"100%", borderCollapse:"collapse"}}>
+              <thead><tr><Th>Date</Th><Th>Check-in</Th><Th>Check-out</Th><Th>Hours</Th><Th>Status</Th></tr></thead>
+              <tbody>
+                {attendanceHistory.length === 0 ? (
+                  <tr><Td colSpan={5} style={{textAlign:"center", color:"var(--text-dim)"}}>No records logged yet.</Td></tr>
+                ) : (
+                  attendanceHistory.map((a,i)=>{
+                    const inT = a.first_in ? new Date(a.first_in).toLocaleTimeString([], {hour:"2-digit", minute:"2-digit"}) : "—";
+                    const outT = a.last_out ? new Date(a.last_out).toLocaleTimeString([], {hour:"2-digit", minute:"2-digit"}) : "—";
+                    return (
+                      <tr key={i}>
+                        <Td mono>{a.work_date ? new Date(a.work_date).toISOString().slice(0,10) : "—"}</Td>
+                        <Td mono>{inT}</Td>
+                        <Td mono>{outT}</Td>
+                        <Td mono>{a.hours ? a.hours + "h" : "—"}</Td>
+                        <Td><StatusBadge status={a.first_in ? "present" : "absent"}/></Td>
+                      </tr>
+                    );
+                  })
+                )}
+              </tbody>
+            </table>
+          </Card>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function AttendancePage({attendance, departments, selectedDate, onDateChange}){
+  const [status, setStatus] = useState("all");
+  const [dept, setDept] = useState("all");
+
+  const rows = attendance.filter(a => {
+    let s = "absent";
+    if (a.first_in) {
+      const t = new Date(a.first_in).toLocaleTimeString("en-GB", {hour:"2-digit", minute:"2-digit"});
+      s = t > "09:45" ? "late" : "present";
+    }
+    return (status === "all" || s === status) && (dept === "all" || a.department === dept);
+  });
+
+  return (
+    <Card style={{padding:0}}>
+      <div style={{display:"flex", gap:10, alignItems:"center", padding:"16px 18px", borderBottom:"1px solid var(--border)", flexWrap:"wrap"}}>
+        <select value={dept} onChange={e=>setDept(e.target.value)} style={{padding:"9px 12px", borderRadius:8, border:"1px solid var(--border)", background:"var(--surface-2)", color:"var(--text)", fontSize:13.5}}>
+          <option value="all">All departments</option>
+          {departments.map(d=><option key={d} value={d}>{d}</option>)}
+        </select>
+        <select value={status} onChange={e=>setStatus(e.target.value)} style={{padding:"9px 12px", borderRadius:8, border:"1px solid var(--border)", background:"var(--surface-2)", color:"var(--text)", fontSize:13.5}}>
+          <option value="all">All statuses</option>
+          <option value="present">Present</option>
+          <option value="late">Late</option>
+          <option value="absent">Absent</option>
+        </select>
+        <input type="date" value={selectedDate} onChange={e=>onDateChange(e.target.value)}
+          style={{padding:"9px 12px", borderRadius:8, border:"1px solid var(--border)", background:"var(--surface-2)", color:"var(--text)", fontSize:13.5}}/>
+        <div style={{flex:1}}/>
+        <Button variant="subtle" onClick={() => window.print()}><Icon name="download" size={15}/>Print / Export</Button>
+      </div>
+      <div style={{overflowX:"auto"}}>
+        <table style={{width:"100%", borderCollapse:"collapse"}}>
+          <thead><tr>
+            <Th>Employee ID</Th><Th>Name</Th><Th>Department</Th><Th>Date</Th><Th>Check-in</Th><Th>Check-out</Th><Th>Hours</Th><Th>Status</Th>
+          </tr></thead>
+          <tbody>
+            {rows.length === 0 ? (
+              <tr><Td colSpan={8} style={{textAlign:"center", color:"var(--text-dim)"}}>No attendance records found for this filter.</Td></tr>
+            ) : (
+              rows.map((a,i)=>{
+                const inTime = a.first_in ? new Date(a.first_in).toLocaleTimeString([], {hour:"2-digit", minute:"2-digit"}) : "—";
+                const outTime = a.last_out ? new Date(a.last_out).toLocaleTimeString([], {hour:"2-digit", minute:"2-digit"}) : "—";
+                let s = "absent";
+                if (a.first_in) {
+                  const t = new Date(a.first_in).toLocaleTimeString("en-GB", {hour:"2-digit", minute:"2-digit"});
+                  s = t > "09:45" ? "late" : "present";
+                }
+                return (
+                  <tr key={i}>
+                    <Td mono>{a.employee_code}</Td>
+                    <Td>{a.full_name}</Td>
+                    <Td>{a.department}</Td>
+                    <Td mono>{selectedDate}</Td>
+                    <Td mono>{inTime}</Td>
+                    <Td mono>{outTime}</Td>
+                    <Td mono>{a.hours ? a.hours + "h" : "—"}</Td>
+                    <Td><StatusBadge status={s}/></Td>
+                  </tr>
+                );
+              })
+            )}
+          </tbody>
+        </table>
+      </div>
+      <div style={{display:"flex", justifyContent:"space-between", alignItems:"center", padding:"12px 18px", fontSize:12.5, color:"var(--text-faint)"}}>
+        <span>Showing {rows.length} of {attendance.length} records</span>
+      </div>
+    </Card>
+  );
+}
+
+function DevicesPage({devices}){
+  return (
+    <div>
+      <div style={{display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:16}}>
+        <div style={{fontSize:15, fontWeight:600}}>Hardware Readers ({devices.length})</div>
+      </div>
+      <div style={{display:"grid", gridTemplateColumns:"repeat(auto-fit, minmax(280px,1fr))", gap:16}}>
+        {devices.length === 0 ? (
+          <Card><div style={{color:"var(--text-dim)"}}>No devices registered.</div></Card>
+        ) : (
+          devices.map(d=>(
+            <Card key={d.id}>
+              <div style={{display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:14}}>
+                <div>
+                  <div className="mono" style={{fontSize:13.5, fontWeight:700}}>{d.device_key || d.device_label}</div>
+                  <div style={{fontSize:12.5, color:"var(--text-dim)"}}>{d.room_name || d.device_label}</div>
+                </div>
+                <StatusBadge status={d.online ? "online" : "offline"}/>
+              </div>
+              <div style={{display:"flex", flexDirection:"column", gap:8, fontSize:13}}>
+                <div style={{display:"flex", justifyContent:"space-between"}}><span style={{color:"var(--text-dim)"}}>Purpose</span><span>{d.purpose || "DOOR"}</span></div>
+                <div style={{display:"flex", justifyContent:"space-between"}}><span style={{color:"var(--text-dim)"}}>Source</span><span className="mono">{d.source || "NATIVE"}</span></div>
+                <div style={{display:"flex", justifyContent:"space-between"}}><span style={{color:"var(--text-dim)"}}>Last seen</span><span>{d.last_seen_at ? new Date(d.last_seen_at).toLocaleTimeString() : "Never"}</span></div>
+                <div style={{display:"flex", justifyContent:"space-between"}}><span style={{color:"var(--text-dim)"}}>Firmware</span><span className="mono">{d.firmware_ver || "v0.1.0"}</span></div>
+              </div>
+            </Card>
+          ))
+        )}
+      </div>
+    </div>
+  );
+}
+
+function AdminPage({departments, employees, rules, onDeleteRule}){
+  const [tab, setTab] = useState("departments");
+  const tabs = [
+    {key:"departments", label:"Departments"},
+    {key:"rules", label:"Access Rules"},
+    {key:"hours", label:"Working hours"},
+    {key:"holidays", label:"Holidays"},
+  ];
+
+  return (
+    <Card style={{padding:0}}>
+      <div style={{display:"flex", borderBottom:"1px solid var(--border)"}}>
+        {tabs.map(t=>(
+          <button key={t.key} onClick={()=>setTab(t.key)} style={{
+            padding:"13px 18px", background:"none", border:"none", cursor:"pointer",
+            fontSize:13.5, fontWeight:600, color: tab===t.key?"var(--primary)":"var(--text-dim)",
+            borderBottom: tab===t.key ? "2px solid var(--primary)" : "2px solid transparent"
+          }}>{t.label}</button>
+        ))}
+      </div>
+      <div style={{padding:20}}>
+        {tab==="departments" && (
+          <div style={{display:"flex", flexDirection:"column", gap:8}}>
+            {departments.map(d=>(
+              <div key={d} style={{display:"flex", justifyContent:"space-between", padding:"10px 14px", background:"var(--surface-2)", borderRadius:8, fontSize:13.5}}>
+                <span>{d}</span>
+                <span className="mono" style={{color:"var(--text-faint)"}}>{employees.filter(e=>e.department===d).length} employees</span>
+              </div>
+            ))}
+          </div>
+        )}
+        {tab==="rules" && (
+          <div>
+            <div style={{fontSize:13.5, color:"var(--text-dim)", marginBottom:14}}>Active room access rules and biometric requirements:</div>
+            <table style={{width:"100%", borderCollapse:"collapse"}}>
+              <thead><tr><Th>Room</Th><Th>Person / Dept</Th><Th>Fingerprint Required</Th><Th>Action</Th></tr></thead>
+              <tbody>
+                {rules.length === 0 ? (
+                  <tr><Td colSpan={4} style={{color:"var(--text-dim)"}}>No rules loaded.</Td></tr>
+                ) : (
+                  rules.map((r,i)=>(
+                    <tr key={i}>
+                      <Td>{r.room_name}</Td>
+                      <Td>{r.full_name ? r.full_name : <span className="mono">{r.department} (Whole dept)</span>}</Td>
+                      <Td>{r.fingerprint_required ? <span style={{color:"var(--amber)", fontWeight:600}}>Yes</span> : <span style={{color:"var(--text-faint)"}}>No</span>}</Td>
+                      <Td><Button variant="danger" style={{padding:"4px 8px", fontSize:12}} onClick={()=>onDeleteRule(r.id)}>Delete</Button></Td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        )}
+        {tab==="hours" && (
+          <div style={{display:"flex", gap:24, fontSize:13.5}}>
+            <div><div style={{color:"var(--text-dim)", marginBottom:6}}>Work start</div><div className="mono" style={{fontSize:18, fontWeight:700}}>09:30</div></div>
+            <div><div style={{color:"var(--text-dim)", marginBottom:6}}>Work end</div><div className="mono" style={{fontSize:18, fontWeight:700}}>18:30</div></div>
+            <div><div style={{color:"var(--text-dim)", marginBottom:6}}>Grace period</div><div className="mono" style={{fontSize:18, fontWeight:700}}>15 min</div></div>
+          </div>
+        )}
+        {tab==="holidays" && (
+          <div style={{display:"flex", flexDirection:"column", gap:8, fontSize:13.5}}>
+            <div style={{display:"flex", justifyContent:"space-between", padding:"10px 14px", background:"var(--surface-2)", borderRadius:8}}><span>Gandhi Jayanti</span><span className="mono" style={{color:"var(--text-faint)"}}>02 Oct 2026</span></div>
+            <div style={{display:"flex", justifyContent:"space-between", padding:"10px 14px", background:"var(--surface-2)", borderRadius:8}}><span>Diwali</span><span className="mono" style={{color:"var(--text-faint)"}}>08 Nov 2026</span></div>
+          </div>
+        )}
+      </div>
+    </Card>
+  );
+}
+
+function AddEmployeeModal({isOpen, onClose, onSave}){
+  const [code, setCode] = useState("");
+  const [name, setName] = useState("");
+  const [dept, setDept] = useState("Engineering");
+  const [type, setType] = useState("EMPLOYEE");
+  const [email, setEmail] = useState("");
+  const [card, setCard] = useState("");
+  const [fp, setFp] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [err, setErr] = useState("");
+
+  if (!isOpen) return null;
+
+  const submit = async (e) => {
+    e.preventDefault();
+    if (!code || !name) { setErr("Code and Name are required"); return; }
+    setLoading(true);
+    setErr("");
+    try {
+      await onSave({ code, name, dept, type, email, card, fp });
+      onClose();
+    } catch(err) {
+      setErr(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="modal-backdrop">
+      <div className="modal-box">
+        <div style={{display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:18}}>
+          <div style={{fontSize:16, fontWeight:700}}>Add New Employee</div>
+          <button onClick={onClose} style={{background:"none", border:"none", cursor:"pointer", color:"var(--text-dim)"}}><Icon name="x" size={18}/></button>
+        </div>
+        {err && <div style={{color:"var(--rose)", fontSize:12.5, marginBottom:12}}>{err}</div>}
+        <form onSubmit={submit} style={{display:"flex", flexDirection:"column", gap:12}}>
+          <div>
+            <label style={{fontSize:12, color:"var(--text-dim)", display:"block", marginBottom:4}}>Employee Code</label>
+            <input required placeholder="EMP-007" value={code} onChange={e=>setCode(e.target.value)}
+              style={{width:"100%", padding:"8px 12px", borderRadius:8, border:"1px solid var(--border)", background:"var(--surface-2)", color:"var(--text)", fontSize:13.5}} />
+          </div>
+          <div>
+            <label style={{fontSize:12, color:"var(--text-dim)", display:"block", marginBottom:4}}>Full Name</label>
+            <input required placeholder="John Doe" value={name} onChange={e=>setName(e.target.value)}
+              style={{width:"100%", padding:"8px 12px", borderRadius:8, border:"1px solid var(--border)", background:"var(--surface-2)", color:"var(--text)", fontSize:13.5}} />
+          </div>
+          <div style={{display:"grid", gridTemplateColumns:"1fr 1fr", gap:10}}>
+            <div>
+              <label style={{fontSize:12, color:"var(--text-dim)", display:"block", marginBottom:4}}>Department</label>
+              <input required value={dept} onChange={e=>setDept(e.target.value)}
+                style={{width:"100%", padding:"8px 12px", borderRadius:8, border:"1px solid var(--border)", background:"var(--surface-2)", color:"var(--text)", fontSize:13.5}} />
+            </div>
+            <div>
+              <label style={{fontSize:12, color:"var(--text-dim)", display:"block", marginBottom:4}}>Person Type</label>
+              <select value={type} onChange={e=>setType(e.target.value)}
+                style={{width:"100%", padding:"8px 12px", borderRadius:8, border:"1px solid var(--border)", background:"var(--surface-2)", color:"var(--text)", fontSize:13.5}}>
+                <option value="EMPLOYEE">Employee</option>
+                <option value="CONTRACTOR">Contractor</option>
+                <option value="VISITOR">Visitor</option>
+              </select>
+            </div>
+          </div>
+          <div>
+            <label style={{fontSize:12, color:"var(--text-dim)", display:"block", marginBottom:4}}>Email (optional)</label>
+            <input type="email" placeholder="john@company.com" value={email} onChange={e=>setEmail(e.target.value)}
+              style={{width:"100%", padding:"8px 12px", borderRadius:8, border:"1px solid var(--border)", background:"var(--surface-2)", color:"var(--text)", fontSize:13.5}} />
+          </div>
+          <div style={{display:"grid", gridTemplateColumns:"1.4fr 1fr", gap:10}}>
+            <div>
+              <label style={{fontSize:12, color:"var(--text-dim)", display:"block", marginBottom:4}}>RFID Card UID (hex)</label>
+              <input placeholder="04A2B7C1" value={card} onChange={e=>setCard(e.target.value.toUpperCase())}
+                style={{width:"100%", padding:"8px 12px", borderRadius:8, border:"1px solid var(--border)", background:"var(--surface-2)", color:"var(--text)", fontSize:13.5}} className="mono" />
+            </div>
+            <div>
+              <label style={{fontSize:12, color:"var(--text-dim)", display:"block", marginBottom:4}}>Fingerprint Slot</label>
+              <input type="number" placeholder="Slot #" value={fp} onChange={e=>setFp(e.target.value)}
+                style={{width:"100%", padding:"8px 12px", borderRadius:8, border:"1px solid var(--border)", background:"var(--surface-2)", color:"var(--text)", fontSize:13.5}} />
+            </div>
+          </div>
+          <div style={{display:"flex", justifyContent:"flex-end", gap:8, marginTop:10}}>
+            <Button variant="ghost" onClick={onClose}>Cancel</Button>
+            <Button variant="primary" type="submit" disabled={loading}>{loading ? "Saving..." : "Save Employee"}</Button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+function LoginPage({onLogin}){
+  const [u, setU] = useState("admin@example.com");
+  const [p, setP] = useState("admin123");
+  const [err, setErr] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  const submit = async (e)=>{
+    e.preventDefault();
+    if(!u.trim() || !p.trim()){ setErr("Enter both email and password."); return; }
+    setLoading(true);
+    setErr("");
+    try {
+      const email = u.includes("@") ? u : u + "@example.com";
+      const data = await apiCall("/api/auth/login", "POST", { email, password: p });
+      sessionStorage.setItem("token", data.token);
+      sessionStorage.setItem("role", data.user?.role || "admin");
+      sessionStorage.setItem("userName", data.user?.email || "Admin");
+      onLogin(data.token);
+    } catch(err) {
+      setErr("Login failed: " + err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div style={{minHeight:"100vh", display:"flex", alignItems:"center", justifyContent:"center", background:"var(--bg)"}}>
+      <form onSubmit={submit} style={{width:360, background:"var(--surface)", border:"1px solid var(--border)", borderRadius:14, padding:"32px 28px"}}>
+        <div style={{width:40, height:40, borderRadius:10, background:"var(--primary)", display:"flex", alignItems:"center", justifyContent:"center", marginBottom:18}}>
+          <Icon name="id" size={20}/>
+        </div>
+        <div style={{fontSize:19, fontWeight:700, marginBottom:4}}>Attendance console</div>
+        <div style={{fontSize:13, color:"var(--text-dim)", marginBottom:22}}>Sign in to manage employees, access control, and live attendance.</div>
+        <div style={{display:"flex", flexDirection:"column", gap:12}}>
+          <input value={u} onChange={e=>setU(e.target.value)} placeholder="Email or Username" style={{padding:"10px 12px", borderRadius:8, border:"1px solid var(--border)", background:"var(--surface-2)", color:"var(--text)", fontSize:13.5}}/>
+          <input value={p} onChange={e=>setP(e.target.value)} type="password" placeholder="Password" style={{padding:"10px 12px", borderRadius:8, border:"1px solid var(--border)", background:"var(--surface-2)", color:"var(--text)", fontSize:13.5}}/>
+        </div>
+        {err && <div style={{color:"var(--rose)", fontSize:12.5, marginTop:10}}>{err}</div>}
+        <Button variant="primary" type="submit" disabled={loading} style={{width:"100%", justifyContent:"center", marginTop:18}}>
+          {loading ? "Signing in..." : "Sign in"}
+        </Button>
+        <div style={{fontSize:11.5, color:"var(--text-faint)", marginTop:14, textAlign:"center"}}>
+          Default: <span className="mono">admin@example.com</span> &middot; <span className="mono">admin123</span>
+        </div>
+      </form>
+    </div>
+  );
+}
+
+/* ---------------- Main Shell ---------------- */
+function Shell(){
+  const [token, setToken] = useState(sessionStorage.getItem("token") || "");
+  const [page, setPage] = useState("dashboard");
+  const [theme, setTheme] = useState("dark");
+  const [selectedEmp, setSelectedEmp] = useState(null);
+  const [now, setNow] = useState(new Date());
+  const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+
+  // Real backend data states
+  const [employees, setEmployees] = useState([]);
+  const [attendance, setAttendance] = useState([]);
+  const [activity, setActivity] = useState([]);
+  const [devices, setDevices] = useState([]);
+  const [occupancy, setOccupancy] = useState({ count: 0, people: [] });
+  const [rules, setRules] = useState([]);
+  const [selectedDate, setSelectedDate] = useState(new Date().toISOString().slice(0,10));
+
+  // Live clock
+  useEffect(()=>{
+    const t = setInterval(()=> setNow(new Date()), 1000);
+    return ()=>clearInterval(t);
+  },[]);
+
+  // Fetch all live data from backend
+  const loadData = useCallback(async () => {
+    if (!token) return;
+    try {
+      const [peopleRes, attRes, evRes, devRes, occRes, rulesRes] = await Promise.all([
+        apiCall("/api/people", "GET", null, token).catch(() => ({ people: [] })),
+        apiCall("/api/attendance?date=" + selectedDate, "GET", null, token).catch(() => ({ attendance: [] })),
+        apiCall("/api/events?limit=30", "GET", null, token).catch(() => ({ events: [] })),
+        apiCall("/api/devices/status", "GET", null, token).catch(() => ({ devices: [] })),
+        apiCall("/api/occupancy", "GET", null, token).catch(() => ({ count: 0, people: [] })),
+        apiCall("/api/rules", "GET", null, token).catch(() => ({ rules: [] })),
+      ]);
+
+      const peopleList = peopleRes.people || [];
+      const grouped = {};
+      for (const p of peopleList) {
+        if (!grouped[p.id]) grouped[p.id] = p;
+        else if (p.card_uid) grouped[p.id] = p;
+      }
+      setEmployees(Object.values(grouped));
+      setAttendance(attRes.attendance || []);
+      setActivity(evRes.events || []);
+      setDevices(devRes.devices || []);
+      setOccupancy(occRes || { count: 0, people: [] });
+      setRules(rulesRes.rules || []);
+    } catch(err) {
+      console.error("Data fetch error:", err);
+    }
+  }, [token, selectedDate]);
+
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
+
+  // Server-Sent Events (SSE) Live Feed connection
+  useEffect(() => {
+    if (!token) return;
+    const stream = new EventSource(API + "/api/stream");
+
+    stream.addEventListener("access_event", (e) => {
+      try {
+        const ev = JSON.parse(e.data);
+        setActivity(prev => [ev, ...prev.slice(0, 29)]);
+        apiCall("/api/attendance?date=" + selectedDate, "GET", null, token).then(r => setAttendance(r.attendance || []));
+        apiCall("/api/occupancy", "GET", null, token).then(r => setOccupancy(r || { count: 0, people: [] }));
+      } catch(err) {}
+    });
+
+    stream.addEventListener("occupancy_changed", () => {
+      apiCall("/api/occupancy", "GET", null, token).then(r => setOccupancy(r || { count: 0, people: [] }));
+    });
+
+    return () => stream.close();
+  }, [token, selectedDate]);
+
+  // Derived departments list
+  const departments = useMemo(() => {
+    const set = new Set(["Engineering", "Operations", "Finance", "HR", "Sales"]);
+    employees.forEach(e => { if (e.department) set.add(e.department); });
+    return Array.from(set);
+  }, [employees]);
+
+  // Add Employee Handler
+  const handleAddEmployee = async (empData) => {
+    const person = await apiCall("/api/people", "POST", {
+      employee_code: empData.code,
+      full_name: empData.name,
+      department: empData.dept,
+      person_type: empData.type,
+      email: empData.email || null,
+    }, token);
+
+    if (empData.card && person.id) {
+      await apiCall("/api/credentials", "POST", {
+        person_id: person.id,
+        card_uid: empData.card,
+        fingerprint_slot: empData.fp ? Number(empData.fp) : null,
+      }, token);
+    }
+    await loadData();
+  };
+
+  // Deactivate Employee Handler
+  const handleDeactivate = async (emp) => {
+    if (emp.is_active) {
+      if (!confirm("Deactivate " + emp.full_name + "? Their card access will be stopped.")) return;
+      await apiCall("/api/people/" + emp.id, "DELETE", null, token);
+    } else {
+      await apiCall("/api/people/" + emp.id, "PUT", { is_active: true }, token);
+    }
+    setSelectedEmp(null);
+    await loadData();
+  };
+
+  // Delete access rule
+  const handleDeleteRule = async (ruleId) => {
+    if (!confirm("Remove this access rule?")) return;
+    await apiCall("/api/rules/" + ruleId, "DELETE", null, token);
+    await loadData();
+  };
+
+  const handleLogout = () => {
+    sessionStorage.clear();
+    setToken("");
+    setSelectedEmp(null);
+  };
+
+  if(!token) return <LoginPage onLogin={t => setToken(t)} />;
+
+  const pageTitle = NAV.find(n=>n.key===page)?.label || "";
+
+  return (
+    <div data-theme={theme} style={{display:"flex", minHeight:"100vh", background:"var(--bg)", color:"var(--text)"}}>
+      <aside style={{width:220, borderRight:"1px solid var(--border)", padding:"20px 14px", display:"flex", flexDirection:"column"}}>
+        <div style={{display:"flex", alignItems:"center", gap:9, padding:"0 8px", marginBottom:26}}>
+          <div style={{width:28, height:28, borderRadius:7, background:"var(--primary)", display:"flex", alignItems:"center", justifyContent:"center"}}>
+            <Icon name="id" size={15}/>
+          </div>
+          <span style={{fontWeight:700, fontSize:14.5}}>Attendance</span>
+        </div>
+        <nav style={{display:"flex", flexDirection:"column", gap:2}}>
+          {NAV.map(n=>(
+            <button key={n.key} onClick={()=>{setPage(n.key); setSelectedEmp(null);}} style={{
+              display:"flex", alignItems:"center", gap:10, padding:"9px 10px", borderRadius:8,
+              border:"none", cursor:"pointer", textAlign:"left", fontSize:13.5, fontWeight:500,
+              background: page===n.key ? "var(--primary-dim)" : "transparent",
+              color: page===n.key ? "var(--primary)" : "var(--text-dim)"
+            }}>
+              <Icon name={n.icon} size={17}/>{n.label}
+            </button>
+          ))}
+        </nav>
+        <div style={{flex:1}}/>
+        <button onClick={handleLogout} style={{
+          display:"flex", alignItems:"center", gap:10, padding:"9px 10px", borderRadius:8,
+          border:"none", cursor:"pointer", background:"transparent", color:"var(--text-faint)", fontSize:13
+        }}><Icon name="logout" size={16}/>Sign out</button>
+      </aside>
+
+      <main style={{flex:1, display:"flex", flexDirection:"column", minWidth:0}}>
+        <header style={{
+          display:"flex", alignItems:"center", justifyContent:"space-between",
+          padding:"14px 24px", borderBottom:"1px solid var(--border)"
+        }}>
+          <div>
+            <div style={{fontSize:16.5, fontWeight:700}}>{selectedEmp ? selectedEmp.full_name : pageTitle}</div>
+            <div className="mono" style={{fontSize:12, color:"var(--text-faint)"}}>
+              {now.toLocaleDateString(undefined,{weekday:"long", year:"numeric", month:"long", day:"numeric"})} · {now.toLocaleTimeString()}
+            </div>
+          </div>
+          <div style={{display:"flex", alignItems:"center", gap:10}}>
+            <button onClick={()=>setTheme(t=>t==="dark"?"light":"dark")} style={{
+              width:34, height:34, borderRadius:8, border:"1px solid var(--border)", background:"var(--surface-2)",
+              display:"flex", alignItems:"center", justifyContent:"center", cursor:"pointer", color:"var(--text)"
+            }}><Icon name={theme==="dark"?"sun":"moon"} size={16}/></button>
+            <div style={{width:32, height:32, borderRadius:"50%", background:"var(--primary-dim)", display:"flex", alignItems:"center", justifyContent:"center", fontSize:12, fontWeight:700, color:"var(--primary)"}}>AD</div>
+          </div>
+        </header>
+
+        <div style={{padding:24, flex:1, overflow:"auto"}}>
+          {page==="dashboard" && (
+            <DashboardPage
+              employees={employees}
+              attendance={attendance}
+              activity={activity}
+              occupancy={occupancy}
+              dateStr={selectedDate}
+            />
+          )}
+          {page==="employees" && !selectedEmp && (
+            <EmployeesPage
+              employees={employees}
+              departments={departments}
+              onSelect={setSelectedEmp}
+              onAddClick={()=>setIsAddModalOpen(true)}
+            />
+          )}
+          {page==="employees" && selectedEmp && (
+            <EmployeeProfile
+              emp={selectedEmp}
+              attendanceHistory={attendance.filter(a => a.person_id === selectedEmp.id || a.employee_code === selectedEmp.employee_code)}
+              onBack={()=>setSelectedEmp(null)}
+              onDeactivate={handleDeactivate}
+              token={token}
+            />
+          )}
+          {page==="attendance" && (
+            <AttendancePage
+              attendance={attendance}
+              departments={departments}
+              selectedDate={selectedDate}
+              onDateChange={setSelectedDate}
+            />
+          )}
+          {page==="devices" && (
+            <DevicesPage
+              devices={devices}
+            />
+          )}
+          {page==="admin" && (
+            <AdminPage
+              departments={departments}
+              employees={employees}
+              rules={rules}
+              onDeleteRule={handleDeleteRule}
+            />
+          )}
+        </div>
+      </main>
+
+      <AddEmployeeModal
+        isOpen={isAddModalOpen}
+        onClose={()=>setIsAddModalOpen(false)}
+        onSave={handleAddEmployee}
+      />
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<Shell/>);
+</script>
+</body>
+</html>
