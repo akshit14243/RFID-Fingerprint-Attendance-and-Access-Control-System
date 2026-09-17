@@ -53,9 +53,7 @@
 <script type="text/babel" data-presets="react">
 const {useState, useMemo, useEffect, useCallback} = React;
 
-const API = location.port === "3000" || location.protocol === "file:"
-  ? (location.protocol === "file:" ? "http://127.0.0.1:3000" : location.origin)
-  : location.origin;
+const API = (location.port === "3000") ? "" : "http://127.0.0.1:3000";
 
 const NAV = [
   {key:"dashboard", label:"Dashboard", icon:"grid"},
@@ -171,7 +169,12 @@ async function apiCall(path, method="GET", body=null, token="") {
   }
 
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data.error || data.details || "HTTP " + res.status);
+  if (!res.ok) {
+    const detailMsg = data.details
+      ? (Array.isArray(data.details) ? data.details.map(d => d.message || (d.path && d.path.join("."))).join(", ") : JSON.stringify(data.details))
+      : "";
+    throw new Error(data.message || detailMsg || data.error || ("HTTP " + res.status));
+  }
   return data;
 }
 
@@ -278,7 +281,7 @@ function DashboardPage({employees, attendance, activity, occupancy, dateStr}){
   );
 }
 
-function EmployeesPage({employees, departments, onSelect, onAddClick, onDeleteEmployee}){
+function EmployeesPage({employees, departments, onSelect, onAddClick, onDeactivate}){
   const [q, setQ] = useState("");
   const [dept, setDept] = useState("all");
   const filtered = employees.filter(e =>
@@ -304,7 +307,7 @@ function EmployeesPage({employees, departments, onSelect, onAddClick, onDeleteEm
       <div style={{overflowX:"auto"}}>
         <table style={{width:"100%", borderCollapse:"collapse"}}>
           <thead><tr>
-            <Th>ID</Th><Th>Name</Th><Th>Department</Th><Th>Type</Th><Th>RFID</Th><Th>Fingerprint</Th><Th>Status</Th><Th></Th>
+            <Th>ID</Th><Th>Name</Th><Th>Department</Th><Th>Type</Th><Th>RFID</Th><Th>Fingerprint</Th><Th>Status</Th><Th style={{textAlign:"right"}}>Action</Th>
           </tr></thead>
           <tbody>
             {filtered.length === 0 ? (
@@ -319,7 +322,27 @@ function EmployeesPage({employees, departments, onSelect, onAddClick, onDeleteEm
                   <Td>{e.card_uid ? <span className="mono" style={{color:"var(--teal)"}}>{e.card_uid}</span> : <span style={{color:"var(--text-faint)"}}>not linked</span>}</Td>
                   <Td>{e.fingerprint_slot!=null ? <span className="mono" style={{color:"var(--teal)"}}>slot {e.fingerprint_slot}</span> : <span style={{color:"var(--text-faint)"}}>not linked</span>}</Td>
                   <Td><StatusBadge status={e.is_active ? "active" : "inactive"}/></Td>
-                  <Td><Icon name="chevron" size={15}/></Td>
+                  <Td style={{textAlign:"right"}}>
+                    <button
+                      type="button"
+                      onClick={(evt)=>{
+                        evt.stopPropagation();
+                        if (onDeactivate) onDeactivate(e);
+                      }}
+                      style={{
+                        background: e.is_active ? "rgba(244,63,94,0.12)" : "rgba(16,185,129,0.12)",
+                        color: e.is_active ? "var(--rose)" : "var(--emerald)",
+                        border: `1px solid ${e.is_active ? "rgba(244,63,94,0.3)" : "rgba(16,185,129,0.3)"}`,
+                        borderRadius: 6,
+                        padding: "5px 10px",
+                        fontSize: 12,
+                        fontWeight: 600,
+                        cursor: "pointer"
+                      }}
+                    >
+                      {e.is_active ? "Deactivate" : "Activate"}
+                    </button>
+                  </Td>
                 </tr>
               ))
             )}
@@ -802,32 +825,36 @@ function Shell(){
 
   const handleAddEmployee = async (empData) => {
     const person = await apiCall("/api/people", "POST", {
-      employee_code: empData.code,
-      full_name: empData.name,
-      department: empData.dept,
-      person_type: empData.type,
-      email: empData.email || null,
+      employee_code: (empData.code || "").trim(),
+      full_name: (empData.name || "").trim(),
+      department: (empData.dept || "").trim(),
+      person_type: empData.type || "EMPLOYEE",
+      email: (empData.email || "").trim() || null,
     }, token);
 
-    if (empData.card && person.id) {
+    if (empData.card && empData.card.trim() && person && person.id) {
       await apiCall("/api/credentials", "POST", {
         person_id: person.id,
-        card_uid: empData.card,
-        fingerprint_slot: empData.fp ? Number(empData.fp) : null,
+        card_uid: empData.card.trim().toUpperCase(),
+        fingerprint_slot: empData.fp && !isNaN(empData.fp) ? Number(empData.fp) : null,
       }, token);
     }
     await loadData();
   };
 
   const handleDeactivate = async (emp) => {
-    if (emp.is_active) {
-      if (!confirm("Deactivate " + emp.full_name + "? Their card access will be stopped.")) return;
-      await apiCall("/api/people/" + emp.id, "DELETE", null, token);
-    } else {
-      await apiCall("/api/people/" + emp.id, "PUT", { is_active: true }, token);
+    try {
+      if (emp.is_active) {
+        if (!confirm("Deactivate " + emp.full_name + "? Their card access will be stopped.")) return;
+        await apiCall("/api/people/" + emp.id, "DELETE", null, token);
+      } else {
+        await apiCall("/api/people/" + emp.id, "PUT", { is_active: true }, token);
+      }
+      setSelectedEmp(null);
+      await loadData();
+    } catch(err) {
+      alert("Action failed: " + err.message);
     }
-    setSelectedEmp(null);
-    await loadData();
   };
 
   const handleDeleteRule = async (ruleId) => {
@@ -910,6 +937,7 @@ function Shell(){
               departments={departments}
               onSelect={setSelectedEmp}
               onAddClick={()=>setIsAddModalOpen(true)}
+              onDeactivate={handleDeactivate}
             />
           )}
           {page==="employees" && selectedEmp && (
