@@ -500,11 +500,14 @@ function AttendancePage({attendance, departments, selectedDate, onDateChange}){
   );
 }
 
-function DevicesPage({devices}){
+function DevicesPage({devices, rooms, onAddDevice, onDeleteDevice}){
+  const [isAddOpen, setIsAddOpen] = useState(false);
+
   return (
     <div>
       <div style={{display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:16}}>
         <div style={{fontSize:15, fontWeight:600}}>Hardware Readers ({devices.length})</div>
+        <Button variant="primary" onClick={()=>setIsAddOpen(true)}><Icon name="plus" size={15}/>Add device</Button>
       </div>
       <div style={{display:"grid", gridTemplateColumns:"repeat(auto-fit, minmax(280px,1fr))", gap:16}}>
         {devices.length === 0 ? (
@@ -524,17 +527,45 @@ function DevicesPage({devices}){
                 <div style={{display:"flex", justifyContent:"space-between"}}><span style={{color:"var(--text-dim)"}}>Source</span><span className="mono">{d.source || "NATIVE"}</span></div>
                 <div style={{display:"flex", justifyContent:"space-between"}}><span style={{color:"var(--text-dim)"}}>Last seen</span><span>{d.last_seen_at ? new Date(d.last_seen_at).toLocaleTimeString() : "Never"}</span></div>
                 <div style={{display:"flex", justifyContent:"space-between"}}><span style={{color:"var(--text-dim)"}}>Firmware</span><span className="mono">{d.firmware_ver || "v0.1.0"}</span></div>
+                <div style={{display:"flex", justifyContent:"space-between"}}><span style={{color:"var(--text-dim)"}}>Status</span><StatusBadge status={d.is_active ? "active" : "inactive"}/></div>
+              </div>
+              <div style={{marginTop:16, paddingTop:12, borderTop:"1px solid var(--border)", display:"flex", justifyContent:"flex-end"}}>
+                <button
+                  type="button"
+                  onClick={()=>onDeleteDevice && onDeleteDevice(d.id)}
+                  style={{
+                    background:"rgba(244,63,94,0.1)",
+                    color:"var(--rose)",
+                    border:"1px solid rgba(244,63,94,0.25)",
+                    borderRadius:6,
+                    padding:"5px 10px",
+                    fontSize:12,
+                    fontWeight:600,
+                    cursor:"pointer",
+                    display:"inline-flex",
+                    alignItems:"center",
+                    gap:5
+                  }}
+                >
+                  <Icon name="trash" size={13}/> Delete device
+                </button>
               </div>
             </Card>
           ))
         )}
       </div>
+      <AddDeviceModal isOpen={isAddOpen} onClose={()=>setIsAddOpen(false)} onSave={onAddDevice} rooms={rooms} />
     </div>
   );
 }
 
-function AdminPage({departments, employees, rules, onDeleteRule}){
+function AdminPage({departments, employees, rules, shifts, holidays, rooms, onAddDepartment, onDeleteDepartment, onAddRule, onDeleteRule, onAddShift, onDeleteShift, onAddHoliday, onDeleteHoliday}){
   const [tab, setTab] = useState("departments");
+  const [isDeptModalOpen, setIsDeptModalOpen] = useState(false);
+  const [isRuleModalOpen, setIsRuleModalOpen] = useState(false);
+  const [isShiftModalOpen, setIsShiftModalOpen] = useState(false);
+  const [isHolidayModalOpen, setIsHolidayModalOpen] = useState(false);
+
   const tabs = [
     {key:"departments", label:"Departments"},
     {key:"rules", label:"Access Rules"},
@@ -555,30 +586,56 @@ function AdminPage({departments, employees, rules, onDeleteRule}){
       </div>
       <div style={{padding:20}}>
         {tab==="departments" && (
-          <div style={{display:"flex", flexDirection:"column", gap:8}}>
-            {departments.map(d=>(
-              <div key={d} style={{display:"flex", justifyContent:"space-between", padding:"10px 14px", background:"var(--surface-2)", borderRadius:8, fontSize:13.5}}>
-                <span>{d}</span>
-                <span className="mono" style={{color:"var(--text-faint)"}}>{employees.filter(e=>e.department===d).length} employees</span>
-              </div>
-            ))}
+          <div>
+            <div style={{display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:14}}>
+              <div style={{fontSize:13.5, color:"var(--text-dim)"}}>Manage organization departments:</div>
+              <Button variant="primary" onClick={()=>setIsDeptModalOpen(true)}><Icon name="plus" size={14}/>Add department</Button>
+            </div>
+            <div style={{display:"flex", flexDirection:"column", gap:8}}>
+              {departments.length === 0 ? (
+                <div style={{color:"var(--text-dim)", fontSize:13}}>No departments found.</div>
+              ) : (
+                departments.map(d=>(
+                  <div key={d.id || d.name || d} style={{display:"flex", justifyContent:"space-between", alignItems:"center", padding:"10px 14px", background:"var(--surface-2)", borderRadius:8, fontSize:13.5}}>
+                    <div style={{display:"flex", alignItems:"center", gap:12}}>
+                      <span style={{fontWeight:600}}>{d.name || d}</span>
+                      <span className="mono" style={{color:"var(--text-faint)", fontSize:12}}>{d.employee_count ?? employees.filter(e=>e.department===(d.name||d)).length} employees</span>
+                    </div>
+                    {d.id && (
+                      <button
+                        type="button"
+                        onClick={()=>onDeleteDepartment(d.id, d.name)}
+                        style={{background:"none", border:"none", cursor:"pointer", color:"var(--rose)", display:"inline-flex", alignItems:"center", gap:4, fontSize:12, fontWeight:600}}
+                      >
+                        <Icon name="trash" size={13}/> Delete
+                      </button>
+                    )}
+                  </div>
+                ))
+              )}
+            </div>
           </div>
         )}
+
         {tab==="rules" && (
           <div>
-            <div style={{fontSize:13.5, color:"var(--text-dim)", marginBottom:14}}>Active room access rules and biometric requirements:</div>
+            <div style={{display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:14}}>
+              <div style={{fontSize:13.5, color:"var(--text-dim)"}}>Active room access rules and biometric requirements:</div>
+              <Button variant="primary" onClick={()=>setIsRuleModalOpen(true)}><Icon name="plus" size={14}/>Add access rule</Button>
+            </div>
             <table style={{width:"100%", borderCollapse:"collapse"}}>
-              <thead><tr><Th>Room</Th><Th>Person / Dept</Th><Th>Fingerprint Required</Th><Th>Action</Th></tr></thead>
+              <thead><tr><Th>Room</Th><Th>Person / Dept</Th><Th>Fingerprint Required</Th><Th>Valid Until</Th><Th style={{textAlign:"right"}}>Action</Th></tr></thead>
               <tbody>
                 {rules.length === 0 ? (
-                  <tr><Td colSpan={4} style={{color:"var(--text-dim)"}}>No rules loaded.</Td></tr>
+                  <tr><Td colSpan={5} style={{color:"var(--text-dim)"}}>No rules loaded.</Td></tr>
                 ) : (
                   rules.map((r,i)=>(
                     <tr key={i}>
                       <Td>{r.room_name}</Td>
                       <Td>{r.full_name ? r.full_name : <span className="mono">{r.department} (Whole dept)</span>}</Td>
                       <Td>{r.fingerprint_required ? <span style={{color:"var(--amber)", fontWeight:600}}>Yes</span> : <span style={{color:"var(--text-faint)"}}>No</span>}</Td>
-                      <Td><Button variant="danger" style={{padding:"4px 8px", fontSize:12}} onClick={()=>onDeleteRule(r.id)}>Delete</Button></Td>
+                      <Td className="mono">{r.valid_until ? new Date(r.valid_until).toLocaleDateString() : "Permanent"}</Td>
+                      <Td style={{textAlign:"right"}}><Button variant="danger" style={{padding:"4px 8px", fontSize:12}} onClick={()=>onDeleteRule(r.id)}>Delete</Button></Td>
                     </tr>
                   ))
                 )}
@@ -586,20 +643,84 @@ function AdminPage({departments, employees, rules, onDeleteRule}){
             </table>
           </div>
         )}
+
         {tab==="hours" && (
-          <div style={{display:"flex", gap:24, fontSize:13.5}}>
-            <div><div style={{color:"var(--text-dim)", marginBottom:6}}>Work start</div><div className="mono" style={{fontSize:18, fontWeight:700}}>09:30</div></div>
-            <div><div style={{color:"var(--text-dim)", marginBottom:6}}>Work end</div><div className="mono" style={{fontSize:18, fontWeight:700}}>18:30</div></div>
-            <div><div style={{color:"var(--text-dim)", marginBottom:6}}>Grace period</div><div className="mono" style={{fontSize:18, fontWeight:700}}>15 min</div></div>
+          <div>
+            <div style={{display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:16}}>
+              <div style={{fontSize:13.5, color:"var(--text-dim)"}}>Configured working hours and shift schedules:</div>
+              <Button variant="primary" onClick={()=>setIsShiftModalOpen(true)}><Icon name="plus" size={14}/>Add shift</Button>
+            </div>
+            <div style={{display:"grid", gridTemplateColumns:"repeat(auto-fit, minmax(260px, 1fr))", gap:14}}>
+              {(!shifts || shifts.length === 0) ? (
+                <div style={{color:"var(--text-dim)", fontSize:13}}>No shift schedules configured.</div>
+              ) : (
+                shifts.map(s=>(
+                  <div key={s.id} style={{padding:"14px 16px", background:"var(--surface-2)", borderRadius:10, border:"1px solid var(--border)", display:"flex", flexDirection:"column", gap:10}}>
+                    <div style={{display:"flex", justifyContent:"space-between", alignItems:"center"}}>
+                      <div style={{fontWeight:700, fontSize:14}}>{s.shift_name}</div>
+                      {s.is_default && <span style={{fontSize:11, padding:"2px 8px", borderRadius:6, background:"var(--primary-dim)", color:"var(--primary)", fontWeight:600}}>Default</span>}
+                    </div>
+                    <div style={{display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:8, fontSize:12.5}}>
+                      <div><div style={{color:"var(--text-dim)"}}>Start</div><div className="mono" style={{fontWeight:600}}>{s.start_time?.slice(0,5)}</div></div>
+                      <div><div style={{color:"var(--text-dim)"}}>End</div><div className="mono" style={{fontWeight:600}}>{s.end_time?.slice(0,5)}</div></div>
+                      <div><div style={{color:"var(--text-dim)"}}>Grace</div><div className="mono" style={{fontWeight:600}}>{s.grace_minutes}m</div></div>
+                    </div>
+                    {!s.is_default && (
+                      <div style={{display:"flex", justifyContent:"flex-end", marginTop:4}}>
+                        <button
+                          type="button"
+                          onClick={()=>onDeleteShift(s.id)}
+                          style={{background:"none", border:"none", cursor:"pointer", color:"var(--rose)", fontSize:12, fontWeight:600, display:"inline-flex", alignItems:"center", gap:4}}
+                        >
+                          <Icon name="trash" size={13}/> Delete
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                ))
+              )}
+            </div>
           </div>
         )}
+
         {tab==="holidays" && (
-          <div style={{display:"flex", flexDirection:"column", gap:8, fontSize:13.5}}>
-            <div style={{display:"flex", justifyContent:"space-between", padding:"10px 14px", background:"var(--surface-2)", borderRadius:8}}><span>Gandhi Jayanti</span><span className="mono" style={{color:"var(--text-faint)"}}>02 Oct 2026</span></div>
-            <div style={{display:"flex", justifyContent:"space-between", padding:"10px 14px", background:"var(--surface-2)", borderRadius:8}}><span>Diwali</span><span className="mono" style={{color:"var(--text-faint)"}}>08 Nov 2026</span></div>
+          <div>
+            <div style={{display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:14}}>
+              <div style={{fontSize:13.5, color:"var(--text-dim)"}}>Observed company holidays:</div>
+              <Button variant="primary" onClick={()=>setIsHolidayModalOpen(true)}><Icon name="plus" size={14}/>Add holiday</Button>
+            </div>
+            <div style={{display:"flex", flexDirection:"column", gap:8}}>
+              {(!holidays || holidays.length === 0) ? (
+                <div style={{color:"var(--text-dim)", fontSize:13}}>No holidays recorded.</div>
+              ) : (
+                holidays.map(h=>(
+                  <div key={h.id} style={{display:"flex", justifyContent:"space-between", alignItems:"center", padding:"10px 14px", background:"var(--surface-2)", borderRadius:8, fontSize:13.5}}>
+                    <div>
+                      <span style={{fontWeight:600}}>{h.holiday_name}</span>
+                      {h.description && <span style={{fontSize:12, color:"var(--text-dim)", marginLeft:10}}>({h.description})</span>}
+                    </div>
+                    <div style={{display:"flex", alignItems:"center", gap:14}}>
+                      <span className="mono" style={{color:"var(--text-faint)", fontSize:12.5}}>{h.holiday_date ? new Date(h.holiday_date).toISOString().slice(0,10) : ""}</span>
+                      <button
+                        type="button"
+                        onClick={()=>onDeleteHoliday(h.id)}
+                        style={{background:"none", border:"none", cursor:"pointer", color:"var(--rose)", display:"inline-flex", alignItems:"center", gap:4, fontSize:12, fontWeight:600}}
+                      >
+                        <Icon name="trash" size={13}/> Delete
+                      </button>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
           </div>
         )}
       </div>
+
+      <AddDepartmentModal isOpen={isDeptModalOpen} onClose={()=>setIsDeptModalOpen(false)} onSave={onAddDepartment} />
+      <AddRuleModal isOpen={isRuleModalOpen} onClose={()=>setIsRuleModalOpen(false)} onSave={onAddRule} rooms={rooms} departments={departments} employees={employees} />
+      <AddShiftModal isOpen={isShiftModalOpen} onClose={()=>setIsShiftModalOpen(false)} onSave={onAddShift} />
+      <AddHolidayModal isOpen={isHolidayModalOpen} onClose={()=>setIsHolidayModalOpen(false)} onSave={onAddHoliday} />
     </Card>
   );
 }
@@ -694,6 +815,376 @@ function AddEmployeeModal({isOpen, onClose, onSave}){
   );
 }
 
+function AddDeviceModal({isOpen, onClose, onSave, rooms}){
+  const [key, setKey] = useState("");
+  const [label, setLabel] = useState("");
+  const [roomId, setRoomId] = useState(rooms && rooms[0]?.id ? rooms[0].id : 1);
+  const [purpose, setPurpose] = useState("DOOR");
+  const [loading, setLoading] = useState(false);
+  const [err, setErr] = useState("");
+
+  useEffect(() => {
+    if (rooms && rooms.length > 0 && !roomId) setRoomId(rooms[0].id);
+  }, [rooms]);
+
+  if (!isOpen) return null;
+
+  const submit = async (e) => {
+    e.preventDefault();
+    if (!key || !label) { setErr("Device Key and Label are required"); return; }
+    setLoading(true);
+    setErr("");
+    try {
+      await onSave({ device_key: key.trim(), device_label: label.trim(), room_id: Number(roomId), purpose, source: "NATIVE" });
+      onClose();
+    } catch(err) {
+      setErr(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="modal-backdrop">
+      <div className="modal-box">
+        <div style={{display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:18}}>
+          <div style={{fontSize:16, fontWeight:700}}>Add New Hardware Device</div>
+          <button onClick={onClose} style={{background:"none", border:"none", cursor:"pointer", color:"var(--text-dim)"}}><Icon name="x" size={18}/></button>
+        </div>
+        {err && <div style={{color:"var(--rose)", fontSize:12.5, marginBottom:12}}>{err}</div>}
+        <form onSubmit={submit} style={{display:"flex", flexDirection:"column", gap:12}}>
+          <div>
+            <label style={{fontSize:12, color:"var(--text-dim)", display:"block", marginBottom:4}}>Device Key (min 8 chars)</label>
+            <input required placeholder="ESP32_READER_02" value={key} onChange={e=>setKey(e.target.value)}
+              style={{width:"100%", padding:"8px 12px", borderRadius:8, border:"1px solid var(--border)", background:"var(--surface-2)", color:"var(--text)", fontSize:13.5}} className="mono" />
+          </div>
+          <div>
+            <label style={{fontSize:12, color:"var(--text-dim)", display:"block", marginBottom:4}}>Device Label</label>
+            <input required placeholder="Server Room Reader" value={label} onChange={e=>setLabel(e.target.value)}
+              style={{width:"100%", padding:"8px 12px", borderRadius:8, border:"1px solid var(--border)", background:"var(--surface-2)", color:"var(--text)", fontSize:13.5}} />
+          </div>
+          <div style={{display:"grid", gridTemplateColumns:"1fr 1fr", gap:10}}>
+            <div>
+              <label style={{fontSize:12, color:"var(--text-dim)", display:"block", marginBottom:4}}>Installed Room</label>
+              <select value={roomId} onChange={e=>setRoomId(e.target.value)}
+                style={{width:"100%", padding:"8px 12px", borderRadius:8, border:"1px solid var(--border)", background:"var(--surface-2)", color:"var(--text)", fontSize:13.5}}>
+                {(rooms || []).map(r=><option key={r.id} value={r.id}>{r.room_name}</option>)}
+              </select>
+            </div>
+            <div>
+              <label style={{fontSize:12, color:"var(--text-dim)", display:"block", marginBottom:4}}>Purpose</label>
+              <select value={purpose} onChange={e=>setPurpose(e.target.value)}
+                style={{width:"100%", padding:"8px 12px", borderRadius:8, border:"1px solid var(--border)", background:"var(--surface-2)", color:"var(--text)", fontSize:13.5}}>
+                <option value="DOOR">DOOR (Access control)</option>
+                <option value="ATTENDANCE">ATTENDANCE (Clock in/out)</option>
+              </select>
+            </div>
+          </div>
+          <div style={{display:"flex", justifyContent:"flex-end", gap:8, marginTop:8}}>
+            <Button variant="ghost" onClick={onClose} disabled={loading}>Cancel</Button>
+            <Button variant="primary" type="submit" disabled={loading}>{loading ? "Adding..." : "Add Device"}</Button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+function AddDepartmentModal({isOpen, onClose, onSave}){
+  const [name, setName] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [err, setErr] = useState("");
+
+  if (!isOpen) return null;
+
+  const submit = async (e) => {
+    e.preventDefault();
+    if (!name.trim()) { setErr("Department name is required"); return; }
+    setLoading(true);
+    setErr("");
+    try {
+      await onSave(name.trim());
+      setName("");
+      onClose();
+    } catch(err) {
+      setErr(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="modal-backdrop">
+      <div className="modal-box">
+        <div style={{display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:18}}>
+          <div style={{fontSize:16, fontWeight:700}}>Add New Department</div>
+          <button onClick={onClose} style={{background:"none", border:"none", cursor:"pointer", color:"var(--text-dim)"}}><Icon name="x" size={18}/></button>
+        </div>
+        {err && <div style={{color:"var(--rose)", fontSize:12.5, marginBottom:12}}>{err}</div>}
+        <form onSubmit={submit} style={{display:"flex", flexDirection:"column", gap:12}}>
+          <div>
+            <label style={{fontSize:12, color:"var(--text-dim)", display:"block", marginBottom:4}}>Department Name</label>
+            <input required placeholder="Quality Assurance" value={name} onChange={e=>setName(e.target.value)}
+              style={{width:"100%", padding:"8px 12px", borderRadius:8, border:"1px solid var(--border)", background:"var(--surface-2)", color:"var(--text)", fontSize:13.5}} />
+          </div>
+          <div style={{display:"flex", justifyContent:"flex-end", gap:8, marginTop:8}}>
+            <Button variant="ghost" onClick={onClose} disabled={loading}>Cancel</Button>
+            <Button variant="primary" type="submit" disabled={loading}>{loading ? "Adding..." : "Add Department"}</Button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+function AddRuleModal({isOpen, onClose, onSave, rooms, departments, employees}){
+  const [roomId, setRoomId] = useState(rooms && rooms[0]?.id ? rooms[0].id : 1);
+  const [targetType, setTargetType] = useState("dept");
+  const [dept, setDept] = useState("Engineering");
+  const [personId, setPersonId] = useState(employees && employees[0]?.id ? employees[0].id : "");
+  const [fingerprintReq, setFingerprintReq] = useState(false);
+  const [validUntil, setValidUntil] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [err, setErr] = useState("");
+
+  useEffect(() => {
+    if (rooms?.length > 0 && !roomId) setRoomId(rooms[0].id);
+    if (departments?.length > 0 && !dept) setDept(departments[0]?.name || departments[0]);
+    if (employees?.length > 0 && !personId) setPersonId(employees[0].id);
+  }, [rooms, departments, employees]);
+
+  if (!isOpen) return null;
+
+  const submit = async (e) => {
+    e.preventDefault();
+    setLoading(true);
+    setErr("");
+    try {
+      const payload = {
+        room_id: Number(roomId),
+        fingerprint_required: fingerprintReq,
+        valid_until: validUntil ? new Date(validUntil).toISOString() : null
+      };
+      if (targetType === "dept") {
+        payload.department = dept;
+        payload.person_id = null;
+      } else {
+        payload.person_id = Number(personId);
+        payload.department = null;
+      }
+      await onSave(payload);
+      onClose();
+    } catch(err) {
+      setErr(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="modal-backdrop">
+      <div className="modal-box">
+        <div style={{display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:18}}>
+          <div style={{fontSize:16, fontWeight:700}}>Add Room Access Rule</div>
+          <button onClick={onClose} style={{background:"none", border:"none", cursor:"pointer", color:"var(--text-dim)"}}><Icon name="x" size={18}/></button>
+        </div>
+        {err && <div style={{color:"var(--rose)", fontSize:12.5, marginBottom:12}}>{err}</div>}
+        <form onSubmit={submit} style={{display:"flex", flexDirection:"column", gap:12}}>
+          <div>
+            <label style={{fontSize:12, color:"var(--text-dim)", display:"block", marginBottom:4}}>Select Room</label>
+            <select value={roomId} onChange={e=>setRoomId(e.target.value)}
+              style={{width:"100%", padding:"8px 12px", borderRadius:8, border:"1px solid var(--border)", background:"var(--surface-2)", color:"var(--text)", fontSize:13.5}}>
+              {(rooms || []).map(r=><option key={r.id} value={r.id}>{r.room_name}</option>)}
+            </select>
+          </div>
+          <div>
+            <label style={{fontSize:12, color:"var(--text-dim)", display:"block", marginBottom:4}}>Rule Target</label>
+            <div style={{display:"flex", gap:16, margin:"6px 0"}}>
+              <label style={{fontSize:13, display:"flex", alignItems:"center", gap:6, cursor:"pointer"}}>
+                <input type="radio" name="targetType" checked={targetType==="dept"} onChange={()=>setTargetType("dept")}/> Whole Department
+              </label>
+              <label style={{fontSize:13, display:"flex", alignItems:"center", gap:6, cursor:"pointer"}}>
+                <input type="radio" name="targetType" checked={targetType==="person"} onChange={()=>setTargetType("person")}/> Specific Employee
+              </label>
+            </div>
+          </div>
+          {targetType === "dept" ? (
+            <div>
+              <label style={{fontSize:12, color:"var(--text-dim)", display:"block", marginBottom:4}}>Department</label>
+              <select value={dept} onChange={e=>setDept(e.target.value)}
+                style={{width:"100%", padding:"8px 12px", borderRadius:8, border:"1px solid var(--border)", background:"var(--surface-2)", color:"var(--text)", fontSize:13.5}}>
+                {(departments || []).map(d=><option key={d.id || d.name || d} value={d.name || d}>{d.name || d}</option>)}
+              </select>
+            </div>
+          ) : (
+            <div>
+              <label style={{fontSize:12, color:"var(--text-dim)", display:"block", marginBottom:4}}>Employee</label>
+              <select value={personId} onChange={e=>setPersonId(e.target.value)}
+                style={{width:"100%", padding:"8px 12px", borderRadius:8, border:"1px solid var(--border)", background:"var(--surface-2)", color:"var(--text)", fontSize:13.5}}>
+                {(employees || []).map(e=><option key={e.id} value={e.id}>{e.full_name} ({e.employee_code})</option>)}
+              </select>
+            </div>
+          )}
+          <div>
+            <label style={{fontSize:13, display:"flex", alignItems:"center", gap:8, cursor:"pointer", marginTop:4}}>
+              <input type="checkbox" checked={fingerprintReq} onChange={e=>setFingerprintReq(e.target.checked)}/> Require Biometric Fingerprint
+            </label>
+          </div>
+          <div>
+            <label style={{fontSize:12, color:"var(--text-dim)", display:"block", marginBottom:4}}>Valid Until (optional)</label>
+            <input type="date" value={validUntil} onChange={e=>setValidUntil(e.target.value)}
+              style={{width:"100%", padding:"8px 12px", borderRadius:8, border:"1px solid var(--border)", background:"var(--surface-2)", color:"var(--text)", fontSize:13.5}} />
+          </div>
+          <div style={{display:"flex", justifyContent:"flex-end", gap:8, marginTop:8}}>
+            <Button variant="ghost" onClick={onClose} disabled={loading}>Cancel</Button>
+            <Button variant="primary" type="submit" disabled={loading}>{loading ? "Saving..." : "Create Rule"}</Button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+function AddShiftModal({isOpen, onClose, onSave}){
+  const [name, setName] = useState("");
+  const [start, setStart] = useState("09:30");
+  const [end, setEnd] = useState("18:30");
+  const [grace, setGrace] = useState("15");
+  const [isDefault, setIsDefault] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [err, setErr] = useState("");
+
+  if (!isOpen) return null;
+
+  const submit = async (e) => {
+    e.preventDefault();
+    if (!name.trim()) { setErr("Shift name is required"); return; }
+    setLoading(true);
+    setErr("");
+    try {
+      await onSave({
+        shift_name: name.trim(),
+        start_time: start,
+        end_time: end,
+        grace_minutes: Number(grace) || 0,
+        is_default: isDefault
+      });
+      onClose();
+    } catch(err) {
+      setErr(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="modal-backdrop">
+      <div className="modal-box">
+        <div style={{display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:18}}>
+          <div style={{fontSize:16, fontWeight:700}}>Add Working Hours / Shift</div>
+          <button onClick={onClose} style={{background:"none", border:"none", cursor:"pointer", color:"var(--text-dim)"}}><Icon name="x" size={18}/></button>
+        </div>
+        {err && <div style={{color:"var(--rose)", fontSize:12.5, marginBottom:12}}>{err}</div>}
+        <form onSubmit={submit} style={{display:"flex", flexDirection:"column", gap:12}}>
+          <div>
+            <label style={{fontSize:12, color:"var(--text-dim)", display:"block", marginBottom:4}}>Shift Name</label>
+            <input required placeholder="Morning Shift" value={name} onChange={e=>setName(e.target.value)}
+              style={{width:"100%", padding:"8px 12px", borderRadius:8, border:"1px solid var(--border)", background:"var(--surface-2)", color:"var(--text)", fontSize:13.5}} />
+          </div>
+          <div style={{display:"grid", gridTemplateColumns:"1fr 1fr", gap:10}}>
+            <div>
+              <label style={{fontSize:12, color:"var(--text-dim)", display:"block", marginBottom:4}}>Start Time</label>
+              <input required type="time" value={start} onChange={e=>setStart(e.target.value)}
+                style={{width:"100%", padding:"8px 12px", borderRadius:8, border:"1px solid var(--border)", background:"var(--surface-2)", color:"var(--text)", fontSize:13.5}} />
+            </div>
+            <div>
+              <label style={{fontSize:12, color:"var(--text-dim)", display:"block", marginBottom:4}}>End Time</label>
+              <input required type="time" value={end} onChange={e=>setEnd(e.target.value)}
+                style={{width:"100%", padding:"8px 12px", borderRadius:8, border:"1px solid var(--border)", background:"var(--surface-2)", color:"var(--text)", fontSize:13.5}} />
+            </div>
+          </div>
+          <div>
+            <label style={{fontSize:12, color:"var(--text-dim)", display:"block", marginBottom:4}}>Late Grace Period (minutes)</label>
+            <input type="number" value={grace} onChange={e=>setGrace(e.target.value)}
+              style={{width:"100%", padding:"8px 12px", borderRadius:8, border:"1px solid var(--border)", background:"var(--surface-2)", color:"var(--text)", fontSize:13.5}} />
+          </div>
+          <div>
+            <label style={{fontSize:13, display:"flex", alignItems:"center", gap:8, cursor:"pointer"}}>
+              <input type="checkbox" checked={isDefault} onChange={e=>setIsDefault(e.target.checked)}/> Set as Default Shift
+            </label>
+          </div>
+          <div style={{display:"flex", justifyContent:"flex-end", gap:8, marginTop:8}}>
+            <Button variant="ghost" onClick={onClose} disabled={loading}>Cancel</Button>
+            <Button variant="primary" type="submit" disabled={loading}>{loading ? "Saving..." : "Add Shift"}</Button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+function AddHolidayModal({isOpen, onClose, onSave}){
+  const [date, setDate] = useState(new Date().toISOString().slice(0,10));
+  const [name, setName] = useState("");
+  const [desc, setDesc] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [err, setErr] = useState("");
+
+  if (!isOpen) return null;
+
+  const submit = async (e) => {
+    e.preventDefault();
+    if (!date || !name.trim()) { setErr("Date and Holiday Name are required"); return; }
+    setLoading(true);
+    setErr("");
+    try {
+      await onSave({
+        holiday_date: date,
+        holiday_name: name.trim(),
+        description: desc.trim() || null
+      });
+      onClose();
+    } catch(err) {
+      setErr(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="modal-backdrop">
+      <div className="modal-box">
+        <div style={{display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:18}}>
+          <div style={{fontSize:16, fontWeight:700}}>Add Company Holiday</div>
+          <button onClick={onClose} style={{background:"none", border:"none", cursor:"pointer", color:"var(--text-dim)"}}><Icon name="x" size={18}/></button>
+        </div>
+        {err && <div style={{color:"var(--rose)", fontSize:12.5, marginBottom:12}}>{err}</div>}
+        <form onSubmit={submit} style={{display:"flex", flexDirection:"column", gap:12}}>
+          <div>
+            <label style={{fontSize:12, color:"var(--text-dim)", display:"block", marginBottom:4}}>Holiday Date</label>
+            <input required type="date" value={date} onChange={e=>setDate(e.target.value)}
+              style={{width:"100%", padding:"8px 12px", borderRadius:8, border:"1px solid var(--border)", background:"var(--surface-2)", color:"var(--text)", fontSize:13.5}} />
+          </div>
+          <div>
+            <label style={{fontSize:12, color:"var(--text-dim)", display:"block", marginBottom:4}}>Holiday Name</label>
+            <input required placeholder="New Year's Day" value={name} onChange={e=>setName(e.target.value)}
+              style={{width:"100%", padding:"8px 12px", borderRadius:8, border:"1px solid var(--border)", background:"var(--surface-2)", color:"var(--text)", fontSize:13.5}} />
+          </div>
+          <div>
+            <label style={{fontSize:12, color:"var(--text-dim)", display:"block", marginBottom:4}}>Description (optional)</label>
+            <input placeholder="National holiday" value={desc} onChange={e=>setDesc(e.target.value)}
+              style={{width:"100%", padding:"8px 12px", borderRadius:8, border:"1px solid var(--border)", background:"var(--surface-2)", color:"var(--text)", fontSize:13.5}} />
+          </div>
+          <div style={{display:"flex", justifyContent:"flex-end", gap:8, marginTop:8}}>
+            <Button variant="ghost" onClick={onClose} disabled={loading}>Cancel</Button>
+            <Button variant="primary" type="submit" disabled={loading}>{loading ? "Saving..." : "Add Holiday"}</Button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
 function LoginPage({onLogin}){
   const [u, setU] = useState("admin@example.com");
   const [p, setP] = useState("admin123");
@@ -757,6 +1248,10 @@ function Shell(){
   const [devices, setDevices] = useState([]);
   const [occupancy, setOccupancy] = useState({ count: 0, people: [] });
   const [rules, setRules] = useState([]);
+  const [departmentsList, setDepartmentsList] = useState([]);
+  const [shifts, setShifts] = useState([]);
+  const [holidays, setHolidays] = useState([]);
+  const [rooms, setRooms] = useState([]);
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().slice(0,10));
 
   useEffect(()=>{
@@ -767,13 +1262,17 @@ function Shell(){
   const loadData = useCallback(async () => {
     if (!token) return;
     try {
-      const [peopleRes, attRes, evRes, devRes, occRes, rulesRes] = await Promise.all([
+      const [peopleRes, attRes, evRes, devRes, occRes, rulesRes, deptsRes, shiftsRes, holsRes, roomsRes] = await Promise.all([
         apiCall("/api/people", "GET", null, token).catch(() => ({ people: [] })),
         apiCall("/api/attendance?date=" + selectedDate, "GET", null, token).catch(() => ({ attendance: [] })),
         apiCall("/api/events?limit=30", "GET", null, token).catch(() => ({ events: [] })),
-        apiCall("/api/devices/status", "GET", null, token).catch(() => ({ devices: [] })),
+        apiCall("/api/devices", "GET", null, token).catch(() => ({ devices: [] })),
         apiCall("/api/occupancy", "GET", null, token).catch(() => ({ count: 0, people: [] })),
         apiCall("/api/rules", "GET", null, token).catch(() => ({ rules: [] })),
+        apiCall("/api/departments", "GET", null, token).catch(() => ({ departments: [] })),
+        apiCall("/api/shifts", "GET", null, token).catch(() => ({ shifts: [] })),
+        apiCall("/api/holidays", "GET", null, token).catch(() => ({ holidays: [] })),
+        apiCall("/api/rooms", "GET", null, token).catch(() => ({ rooms: [] })),
       ]);
 
       const peopleList = peopleRes.people || [];
@@ -788,6 +1287,10 @@ function Shell(){
       setDevices(devRes.devices || []);
       setOccupancy(occRes || { count: 0, people: [] });
       setRules(rulesRes.rules || []);
+      setDepartmentsList(deptsRes.departments || []);
+      setShifts(shiftsRes.shifts || []);
+      setHolidays(holsRes.holidays || []);
+      setRooms(roomsRes.rooms || []);
     } catch(err) {
       console.error("Data fetch error:", err);
     }
@@ -818,10 +1321,11 @@ function Shell(){
   }, [token, selectedDate]);
 
   const departments = useMemo(() => {
+    if (departmentsList && departmentsList.length > 0) return departmentsList.map(d => d.name);
     const set = new Set(["Engineering", "Operations", "Finance", "HR", "Sales"]);
     employees.forEach(e => { if (e.department) set.add(e.department); });
     return Array.from(set);
-  }, [employees]);
+  }, [departmentsList, employees]);
 
   const handleAddEmployee = async (empData) => {
     const person = await apiCall("/api/people", "POST", {
@@ -857,9 +1361,58 @@ function Shell(){
     }
   };
 
+  const handleAddDevice = async (deviceData) => {
+    await apiCall("/api/devices", "POST", deviceData, token);
+    await loadData();
+  };
+
+  const handleDeleteDevice = async (deviceId) => {
+    if (!confirm("Are you sure you want to remove/deactivate this hardware device?")) return;
+    await apiCall("/api/devices/" + deviceId, "DELETE", null, token);
+    await loadData();
+  };
+
+  const handleAddDepartment = async (name) => {
+    await apiCall("/api/departments", "POST", { name }, token);
+    await loadData();
+  };
+
+  const handleDeleteDepartment = async (deptId, deptName) => {
+    if (!confirm("Delete department '" + deptName + "'?")) return;
+    await apiCall("/api/departments/" + deptId, "DELETE", null, token);
+    await loadData();
+  };
+
+  const handleAddRule = async (ruleData) => {
+    await apiCall("/api/rules", "POST", ruleData, token);
+    await loadData();
+  };
+
   const handleDeleteRule = async (ruleId) => {
     if (!confirm("Remove this access rule?")) return;
     await apiCall("/api/rules/" + ruleId, "DELETE", null, token);
+    await loadData();
+  };
+
+  const handleAddShift = async (shiftData) => {
+    await apiCall("/api/shifts", "POST", shiftData, token);
+    await loadData();
+  };
+
+  const handleDeleteShift = async (shiftId) => {
+    if (!confirm("Remove this shift schedule?")) return;
+    await apiCall("/api/shifts/" + shiftId, "DELETE", null, token);
+    await loadData();
+  };
+
+  const handleAddHoliday = async (holidayData) => {
+    await apiCall("/api/holidays", "POST", holidayData, token);
+    await loadData();
+  };
+
+  const handleDeleteHoliday = async (holidayId) => {
+    if (!confirm("Remove this holiday?")) return;
+    await apiCall("/api/holidays/" + holidayId, "DELETE", null, token);
     await loadData();
   };
 
@@ -960,14 +1513,27 @@ function Shell(){
           {page==="devices" && (
             <DevicesPage
               devices={devices}
+              rooms={rooms}
+              onAddDevice={handleAddDevice}
+              onDeleteDevice={handleDeleteDevice}
             />
           )}
           {page==="admin" && (
             <AdminPage
-              departments={departments}
+              departments={departmentsList}
               employees={employees}
               rules={rules}
+              shifts={shifts}
+              holidays={holidays}
+              rooms={rooms}
+              onAddDepartment={handleAddDepartment}
+              onDeleteDepartment={handleDeleteDepartment}
+              onAddRule={handleAddRule}
               onDeleteRule={handleDeleteRule}
+              onAddShift={handleAddShift}
+              onDeleteShift={handleDeleteShift}
+              onAddHoliday={handleAddHoliday}
+              onDeleteHoliday={handleDeleteHoliday}
             />
           )}
         </div>

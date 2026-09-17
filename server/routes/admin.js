@@ -163,16 +163,57 @@ router.post("/devices", requireUser, requireAdmin, async (req, res, next) => {
   }
 });
 
+router.delete("/devices/:id", requireUser, requireAdmin, async (req, res, next) => {
+  try {
+    const hasEvents = await one("SELECT id FROM access_events WHERE device_id = $1 LIMIT 1", [req.params.id]);
+    if (hasEvents) {
+      const row = await one("UPDATE devices SET is_active = FALSE WHERE id = $1 RETURNING id", [req.params.id]);
+      if (!row) return res.status(404).json({ error: "not_found" });
+      return res.json({ deactivated: row.id, message: "Device deactivated due to historical logs" });
+    }
+    const row = await one("DELETE FROM devices WHERE id = $1 RETURNING id", [req.params.id]);
+    if (!row) return res.status(404).json({ error: "not_found" });
+    res.json({ deleted: row.id });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.put("/devices/:id", requireUser, requireAdmin, async (req, res, next) => {
+  try {
+    const s = z.object({
+      device_label: z.string().min(1).optional(),
+      room_id: z.number().int().optional(),
+      purpose: z.enum(["DOOR", "ATTENDANCE"]).optional(),
+      is_active: z.boolean().optional(),
+    }).safeParse(req.body);
+    if (!s.success) return bad(res, s.error);
+    const row = await one(
+      `UPDATE devices SET
+         device_label = COALESCE($2, device_label),
+         room_id      = COALESCE($3, room_id),
+         purpose      = COALESCE($4, purpose),
+         is_active    = COALESCE($5, is_active)
+       WHERE id = $1 RETURNING *`,
+      [req.params.id, s.data.device_label ?? null, s.data.room_id ?? null, s.data.purpose ?? null, s.data.is_active ?? null],
+    );
+    if (!row) return res.status(404).json({ error: "not_found" });
+    res.json(row);
+  } catch (err) {
+    next(err);
+  }
+});
+
 router.get("/rules", requireUser, async (_req, res, next) => {
   try {
-    res.json({
-      rules: await query(
-        `SELECT ar.*, r.room_name, p.full_name
-           FROM access_rules ar
-           JOIN rooms r ON r.id = ar.room_id
-           LEFT JOIN people p ON p.id = ar.person_id
-          ORDER BY r.room_name`),
-    });
+    const rows = await query(
+      `SELECT ar.*, r.room_name, p.full_name
+         FROM access_rules ar
+         JOIN rooms r ON r.id = ar.room_id
+         LEFT JOIN people p ON p.id = ar.person_id
+        ORDER BY r.room_name`,
+    );
+    res.json({ rules: rows });
   } catch (err) {
     next(err);
   }
@@ -211,4 +252,161 @@ router.delete("/rules/:id", requireUser, requireAdmin, async (req, res, next) =>
   }
 });
 
+router.get("/departments", requireUser, async (_req, res, next) => {
+  try {
+    const rows = await query(`
+      SELECT d.*, COUNT(p.id)::int AS employee_count
+        FROM departments d
+        LEFT JOIN people p ON p.department = d.name AND p.is_active = TRUE
+       GROUP BY d.id, d.name
+       ORDER BY d.name
+    `);
+    res.json({ departments: rows });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.post("/departments", requireUser, requireAdmin, async (req, res, next) => {
+  try {
+    const s = z.object({ name: z.string().min(1).max(60) }).safeParse(req.body);
+    if (!s.success) return bad(res, s.error);
+    const row = await one("INSERT INTO departments (name) VALUES ($1) RETURNING *", [s.data.name.trim()]);
+    res.status(201).json(row);
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.delete("/departments/:id", requireUser, requireAdmin, async (req, res, next) => {
+  try {
+    const dept = await one("SELECT * FROM departments WHERE id = $1", [req.params.id]);
+    if (!dept) return res.status(404).json({ error: "not_found" });
+    const inUse = await one("SELECT id FROM people WHERE department = $1 LIMIT 1", [dept.name]);
+    if (inUse) {
+      return res.status(400).json({ error: "in_use", message: "Cannot delete department with assigned employees. Reassign employees first." });
+    }
+    await one("DELETE FROM departments WHERE id = $1 RETURNING id", [req.params.id]);
+    res.json({ deleted: dept.id });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.get("/shifts", requireUser, async (_req, res, next) => {
+  try {
+    const rows = await query("SELECT * FROM shifts ORDER BY id");
+    res.json({ shifts: rows });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.post("/shifts", requireUser, requireAdmin, async (req, res, next) => {
+  try {
+    const s = z.object({
+      shift_name: z.string().min(1).max(60),
+      start_time: z.string().min(4),
+      end_time: z.string().min(4),
+      grace_minutes: z.number().int().min(0).default(15),
+      is_default: z.boolean().default(false),
+    }).safeParse(req.body);
+    if (!s.success) return bad(res, s.error);
+    if (s.data.is_default) {
+      await query("UPDATE shifts SET is_default = FALSE");
+    }
+    const row = await one(
+      `INSERT INTO shifts (shift_name, start_time, end_time, grace_minutes, is_default)
+       VALUES ($1, $2, $3, $4, $5) RETURNING *`,
+      [s.data.shift_name.trim(), s.data.start_time, s.data.end_time, s.data.grace_minutes, s.data.is_default],
+    );
+    res.status(201).json(row);
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.put("/shifts/:id", requireUser, requireAdmin, async (req, res, next) => {
+  try {
+    const s = z.object({
+      shift_name: z.string().min(1).max(60).optional(),
+      start_time: z.string().min(4).optional(),
+      end_time: z.string().min(4).optional(),
+      grace_minutes: z.number().int().min(0).optional(),
+      is_default: z.boolean().optional(),
+    }).safeParse(req.body);
+    if (!s.success) return bad(res, s.error);
+    if (s.data.is_default) {
+      await query("UPDATE shifts SET is_default = FALSE WHERE id <> $1", [req.params.id]);
+    }
+    const row = await one(
+      `UPDATE shifts SET
+         shift_name    = COALESCE($2, shift_name),
+         start_time    = COALESCE($3, start_time),
+         end_time      = COALESCE($4, end_time),
+         grace_minutes = COALESCE($5, grace_minutes),
+         is_default    = COALESCE($6, is_default)
+       WHERE id = $1 RETURNING *`,
+      [req.params.id, s.data.shift_name?.trim() ?? null, s.data.start_time ?? null, s.data.end_time ?? null, s.data.grace_minutes ?? null, s.data.is_default ?? null],
+    );
+    if (!row) return res.status(404).json({ error: "not_found" });
+    res.json(row);
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.delete("/shifts/:id", requireUser, requireAdmin, async (req, res, next) => {
+  try {
+    const shift = await one("SELECT * FROM shifts WHERE id = $1", [req.params.id]);
+    if (!shift) return res.status(404).json({ error: "not_found" });
+    if (shift.is_default) {
+      return res.status(400).json({ error: "default_shift", message: "Cannot delete the default shift schedule." });
+    }
+    await one("DELETE FROM shifts WHERE id = $1 RETURNING id", [req.params.id]);
+    res.json({ deleted: shift.id });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.get("/holidays", requireUser, async (_req, res, next) => {
+  try {
+    const rows = await query("SELECT * FROM holidays ORDER BY holiday_date ASC");
+    res.json({ holidays: rows });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.post("/holidays", requireUser, requireAdmin, async (req, res, next) => {
+  try {
+    const s = z.object({
+      holiday_date: z.string().min(10),
+      holiday_name: z.string().min(1).max(120),
+      description: z.string().nullable().optional(),
+    }).safeParse(req.body);
+    if (!s.success) return bad(res, s.error);
+    const row = await one(
+      `INSERT INTO holidays (holiday_date, holiday_name, description)
+       VALUES ($1, $2, $3) RETURNING *`,
+      [s.data.holiday_date, s.data.holiday_name.trim(), s.data.description?.trim() ?? null],
+    );
+    res.status(201).json(row);
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.delete("/holidays/:id", requireUser, requireAdmin, async (req, res, next) => {
+  try {
+    const row = await one("DELETE FROM holidays WHERE id = $1 RETURNING id", [req.params.id]);
+    if (!row) return res.status(404).json({ error: "not_found" });
+    res.json({ deleted: row.id });
+  } catch (err) {
+    next(err);
+  }
+});
+
 module.exports = router;
+
