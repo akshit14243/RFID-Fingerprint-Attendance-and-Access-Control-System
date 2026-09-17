@@ -1,13 +1,3 @@
-// OPTIONAL: pull events out of the existing RFID-only system.
-//
-// Off by default (LEGACY_SYNC_ENABLED=false in .env). It runs on a timer, in
-// its own module, and it can only INSERT events - so if their API is down,
-// slow or returns rubbish, the live doors keep working exactly as before.
-//
-// Their records have no fingerprint, so everything imported is stored with
-// fingerprint_used = false and source = 'LEGACY'. On the dashboard you can
-// tell at a glance which events came from the old system.
-
 const { query, one } = require("../db");
 const { findDevice, decideAndLog } = require("../decision");
 const map = require("./mapping");
@@ -39,7 +29,6 @@ async function fetchBatch(since) {
 async function importRecord(rec) {
   const externalId = map.externalId(rec);
 
-  // Already imported? Nothing to do. This is what makes re-running safe.
   const seen = await one("SELECT id FROM access_events WHERE external_id = $1", [externalId]);
   if (seen) return "duplicate";
 
@@ -53,7 +42,7 @@ async function importRecord(rec) {
     device,
     {
       card_uid: map.cardUid(rec),
-      fingerprint_slot: null,               // the old system has no fingerprint
+      fingerprint_slot: null,
       scanned_at: map.scannedAt(rec),
       device_event_id: `LEGACY-${externalId}`,
     },

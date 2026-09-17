@@ -1,16 +1,4 @@
 #!/usr/bin/env node
-// A fake ESP32, so the whole backend can be built and demonstrated without any
-// hardware. It speaks exactly the same HTTP the real boards will speak.
-//
-//   node tools/simulate_device.js --scan                 one normal scan
-//   node tools/simulate_device.js --loop 5               five random scans
-//   node tools/simulate_device.js --offline 4            buffer 4, then sync
-//   node tools/simulate_device.js --replay               re-send the last batch (must all be duplicates)
-//   node tools/simulate_device.js --card 0499FF01        unknown card, should be denied
-//   node tools/simulate_device.js --device DEV-SRV-2B7D91A6 --no-finger
-//   node tools/simulate_device.js --heartbeat
-//
-// Options: --url http://127.0.0.1:3000  --device <device_key>
 
 const fs = require("fs");
 const path = require("path");
@@ -29,7 +17,6 @@ const BUFFER_FILE = path.join(__dirname, ".sim_buffer.json");
 const CARDS = ["04A2B7C1", "04B3C8D2", "04C4D9E3", "04D5EAF4", "04E6FB05", "04F70C16"];
 const SLOTS = { "04A2B7C1": 1, "04B3C8D2": 2, "04C4D9E3": 3, "04D5EAF4": 4, "04E6FB05": 5, "04F70C16": 6 };
 
-// The event counter the real board keeps in flash so it survives a reboot.
 const counterFile = path.join(__dirname, ".sim_counter");
 function nextEventId() {
   const n = (fs.existsSync(counterFile) ? Number(fs.readFileSync(counterFile, "utf8")) : 0) + 1;
@@ -83,8 +70,6 @@ async function loop(n) {
   }
 }
 
-// Pretend the Wi-Fi was down: build a buffer with real timestamps from the
-// past, then send the whole thing at once when the "network comes back".
 async function offline(n) {
   const events = [];
   for (let i = n; i > 0; i--) {
@@ -99,7 +84,6 @@ async function offline(n) {
   console.log("The board deletes only the ids listed in stored[].");
 }
 
-// Re-send exactly the same batch. Everything must come back as duplicate.
 async function replay() {
   if (!fs.existsSync(BUFFER_FILE)) return console.log("no buffer to replay - run --offline first");
   const events = JSON.parse(fs.readFileSync(BUFFER_FILE, "utf8"));

@@ -1,12 +1,3 @@
-// THE ACCESS DECISION.
-// One scan in, one answer out: allowed or denied, which direction, and why.
-// Every door in the building goes through this function - normal doors,
-// restricted doors and the shift check-in point. The difference between them
-// is data (fingerprint_required on the rule), not code.
-//
-// The order of the checks matters: cheapest and most definite first, so the
-// reason code we return is the real reason and not a side effect.
-
 const { query, one } = require("./db");
 const { broadcast } = require("./bus");
 
@@ -28,7 +19,6 @@ async function findCredential(cardUid) {
   );
 }
 
-// A rule naming the person beats a rule naming their department.
 async function findRule(roomId, personId, department) {
   return one(
     `SELECT * FROM access_rules
@@ -41,8 +31,6 @@ async function findRule(roomId, personId, department) {
   );
 }
 
-// IN or OUT is not sent by the board; we work it out from the last allowed
-// event for that person in that room. First ever scan = IN.
 async function nextDirection(personId, roomId) {
   const last = await one(
     `SELECT direction FROM access_events
@@ -68,11 +56,6 @@ function evaluate(device, cred, rule, fingerprintSlot) {
   return "OK";
 }
 
-/**
- * Decide one scan and store it.
- * scan: { card_uid, fingerprint_slot, scanned_at, device_event_id }
- * returns { allowed, direction, person_name, reason, event_id, duplicate }
- */
 async function decideAndLog(device, scan, opts = {}) {
   const cardUid = String(scan.card_uid).toUpperCase().replace(/[^0-9A-F]/g, "");
   const fp = scan.fingerprint_slot ?? null;
@@ -85,7 +68,6 @@ async function decideAndLog(device, scan, opts = {}) {
   const reason = evaluate(device, cred, rule, fp);
   const allowed = reason === "OK";
 
-  // Unknown cards are logged as an IN attempt so they show up in the denied report.
   const direction = cred ? await nextDirection(cred.person_id, device.room_id) : "IN";
   const scannedAt = validDate(scan.scanned_at);
 
@@ -113,8 +95,6 @@ async function decideAndLog(device, scan, opts = {}) {
     opts.externalId || null,
   ]);
 
-  // Nothing returned = this device_event_id was already stored. A retry of
-  // something we already handled, not an error. Report the stored answer.
   if (rows.length === 0) {
     const prev = await one(
       `SELECT id, decision, direction, reason_code FROM access_events
@@ -140,7 +120,6 @@ async function decideAndLog(device, scan, opts = {}) {
     duplicate: false,
   };
 
-  // Push it to every dashboard that is watching.
   broadcast("access_event", {
     id: rows[0].id,
     person_name: result.person_name,

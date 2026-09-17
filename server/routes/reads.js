@@ -1,15 +1,9 @@
-// Everything the dashboard reads. All of these need a login (any role).
-
 const express = require("express");
 const { query } = require("../db");
 const { requireUser } = require("../auth");
 
 const router = express.Router();
 
-// Every route here needs a login. Added per route (not with router.use) so
-// that unrelated /api paths mounted alongside are not affected.
-
-// Who is inside right now, per room. This is the fire-drill muster list.
 router.get("/occupancy", requireUser, async (_req, res, next) => {
   try {
     const rows = await query("SELECT * FROM v_occupancy ORDER BY room_name, full_name");
@@ -19,7 +13,6 @@ router.get("/occupancy", requireUser, async (_req, res, next) => {
   }
 });
 
-// Event history with filters. Every row carries full date and time.
 router.get("/events", requireUser, async (req, res, next) => {
   try {
     const { from, to, room_id, person_id, decision, direction } = req.query;
@@ -62,7 +55,6 @@ router.get("/events", requireUser, async (req, res, next) => {
   }
 });
 
-// First in / last out / hours, per person, for one day (default today).
 router.get("/attendance", requireUser, async (req, res, next) => {
   try {
     const date = req.query.date || new Date().toISOString().slice(0, 10);
@@ -76,7 +68,6 @@ router.get("/attendance", requireUser, async (req, res, next) => {
   }
 });
 
-// Device health - which board last spoke to us and when.
 router.get("/devices/status", requireUser, async (_req, res, next) => {
   try {
     const rows = await query(

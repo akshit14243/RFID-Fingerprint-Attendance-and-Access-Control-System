@@ -1,7 +1,3 @@
-// Dashboard login. Deliberately simple: email + bcrypt password, and a signed
-// token we generate ourselves with node's crypto so there is no extra library.
-// The role is read from the database on every request, never from the client.
-
 const crypto = require("crypto");
 const bcrypt = require("bcryptjs");
 const { one } = require("./db");
@@ -19,7 +15,6 @@ function verify(token) {
   if (!token || !token.includes(".")) return null;
   const [body, sig] = token.split(".");
   const expected = crypto.createHmac("sha256", SECRET).update(body).digest("base64url");
-  // timing-safe compare; lengths must match first or timingSafeEqual throws
   if (sig.length !== expected.length) return null;
   if (!crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(expected))) return null;
   const payload = JSON.parse(Buffer.from(body, "base64url").toString());
@@ -36,7 +31,6 @@ async function login(email, password) {
   return { token, user: { id: user.id, email: user.email, role: user.role } };
 }
 
-// Any logged-in user (admin or viewer).
 async function requireUser(req, res, next) {
   try {
     const header = req.headers.authorization || "";
@@ -51,7 +45,6 @@ async function requireUser(req, res, next) {
   }
 }
 
-// Writes only. Role comes from the database row we just loaded.
 function requireAdmin(req, res, next) {
   if (!req.user || req.user.role !== "admin") {
     return res.status(403).json({ error: "forbidden", message: "admin role required" });

@@ -5,7 +5,6 @@ const { findCredential, findRule, nextDirection } = require("../decision");
 
 const router = express.Router();
 
-// Helper to find device by key or alias (like "ESP32_01" -> "DEV-MAIN-8F2A41C7")
 async function resolveDevice(esp32Id) {
   const idStr = String(esp32Id || "").trim();
   let dev = await one(
@@ -15,7 +14,6 @@ async function resolveDevice(esp32Id) {
     [idStr]
   );
   if (!dev) {
-    // Fallback: if ESP32_01, map to room 1 (Main Entrance)
     dev = await one(
       `SELECT d.*, r.room_name, r.is_restricted
          FROM devices d JOIN rooms r ON r.id = d.room_id
@@ -25,15 +23,10 @@ async function resolveDevice(esp32Id) {
   return dev;
 }
 
-// Normalize NFC UID (handles "C6:10:00:02" -> "C6100002" or raw hex)
 function cleanUid(raw) {
   return String(raw || "").toUpperCase().replace(/[^0-9A-F]/g, "");
 }
 
-// ============================================================================
-// 1. GET /access_control/authenticate.php
-// Params: nfc_uid, esp32_id
-// ============================================================================
 router.get("/access_control/authenticate.php", async (req, res, next) => {
   try {
     const rawUid = req.query.nfc_uid;
@@ -50,7 +43,6 @@ router.get("/access_control/authenticate.php", async (req, res, next) => {
       return res.json({ success: false, message: "Unknown or inactive device" });
     }
 
-    // Look up credential
     const cred = await findCredential(nfcUid);
 
     if (!cred || !cred.person_active || cred.is_revoked) {
@@ -61,7 +53,6 @@ router.get("/access_control/authenticate.php", async (req, res, next) => {
       });
     }
 
-    // Check expiration
     if (cred.valid_until && new Date(cred.valid_until) < new Date()) {
       return res.json({
         success: true,
@@ -70,7 +61,6 @@ router.get("/access_control/authenticate.php", async (req, res, next) => {
       });
     }
 
-    // Check access rule for this room
     const rule = await findRule(device.room_id, cred.person_id, cred.department);
     if (!rule) {
       return res.json({
@@ -80,7 +70,6 @@ router.get("/access_control/authenticate.php", async (req, res, next) => {
       });
     }
 
-    // Success response matching esp32_test2.ino expected fields
     return res.json({
       success: true,
       authorized: true,
@@ -97,27 +86,21 @@ router.get("/access_control/authenticate.php", async (req, res, next) => {
   }
 });
 
-// ============================================================================
-// 2. GET /access_control/log_access.php
-// Params: user_id, door_id, nfc_uid, fingerprint_id, result, reason
-// ============================================================================
 router.get("/access_control/log_access.php", async (req, res, next) => {
   try {
     const userId = Number(req.query.user_id) || null;
     const doorId = Number(req.query.door_id) || 1;
     const rawNfc = req.query.nfc_uid;
     const fpId = Number(req.query.fingerprint_id);
-    const result = String(req.query.result || "").toUpperCase(); // "GRANTED" or "DENIED"
+    const result = String(req.query.result || "").toUpperCase();
     const reason = String(req.query.reason || "OK");
 
     const nfcUid = cleanUid(rawNfc);
     const decision = result === "GRANTED" ? "ALLOWED" : "DENIED";
 
-    // Lookup device for this room
     const dev = await one(`SELECT id FROM devices WHERE room_id = $1 LIMIT 1`, [doorId]);
     const deviceId = dev ? dev.id : 1;
 
-    // Lookup credential if possible
     let credId = null;
     let personId = userId;
     if (nfcUid) {
@@ -132,7 +115,6 @@ router.get("/access_control/log_access.php", async (req, res, next) => {
     const now = new Date();
     const eventIdStr = `ESP32-${Date.now().toString(36).toUpperCase()}-${Math.floor(Math.random()*1000)}`;
 
-    // Insert access event
     const event = await one(
       `INSERT INTO access_events
          (device_id, room_id, person_id, credential_id, card_uid, direction,
@@ -157,7 +139,6 @@ router.get("/access_control/log_access.php", async (req, res, next) => {
       ]
     );
 
-    // Broadcast via SSE to live dashboard
     let personName = "Unknown";
     let roomName = "";
     if (personId) {
@@ -181,24 +162,18 @@ router.get("/access_control/log_access.php", async (req, res, next) => {
 
     broadcast("occupancy_changed", { room_id: doorId });
 
-    // Response matching esp32_test2.ino
     res.json({ success: true, event_id: event.id });
   } catch (err) {
     next(err);
   }
 });
 
-// ============================================================================
-// 3. GET /access_control/sync.php
-// Params: esp32_id
-// ============================================================================
 router.get("/access_control/sync.php", async (req, res, next) => {
   try {
     const esp32Id = req.query.esp32_id;
     const device = await resolveDevice(esp32Id);
     const roomId = device ? device.room_id : 1;
 
-    // Get all valid employees with access to this room
     const rows = await query(
       `SELECT p.employee_code, p.full_name, c.card_uid, c.fingerprint_slot, p.is_active
          FROM access_rules r

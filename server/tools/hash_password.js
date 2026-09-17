@@ -1,5 +1,3 @@
-// node tools/hash_password.js mypassword    -> prints the bcrypt hash to paste
-// into the users table. Plain passwords are never stored anywhere.
 const bcrypt = require("bcryptjs");
 const pw = process.argv[2];
 if (!pw) {

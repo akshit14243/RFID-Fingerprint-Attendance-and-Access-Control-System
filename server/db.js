@@ -1,5 +1,3 @@
-// One shared PostgreSQL pool for the whole server.
-// Moving to a hosted database later = change these values in .env, nothing else.
 const path = require("path");
 require("dotenv").config({ path: path.join(__dirname, ".env") });
 require("dotenv").config();
@@ -14,7 +12,6 @@ const pool = new Pool({
   max: 10,
 });
 
-// Small wrapper so route files never touch the pool directly.
 async function query(text, params) {
   const res = await pool.query(text, params);
   return res.rows;

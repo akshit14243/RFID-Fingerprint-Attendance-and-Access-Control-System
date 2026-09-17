@@ -1,8 +1,3 @@
-// The live-update bus. Every dashboard that opens GET /api/stream registers
-// here; when a scan is stored we push it to all of them.
-// Deliberately tiny: no websocket library, no rooms, no reconnect logic on our
-// side (the browser's EventSource reconnects by itself).
-
 const clients = new Set();
 
 function addClient(res) {

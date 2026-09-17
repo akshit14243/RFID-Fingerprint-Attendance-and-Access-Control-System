@@ -1,10 +1,3 @@
-// Local API server for the RFID + fingerprint access control system.
-//
-//   cd server && npm install && cp .env.example .env && npm start
-//
-// It listens on 0.0.0.0:3000 so the ESP32 boards on the same Wi-Fi can reach
-// it at http://<my-laptop-lan-ip>:3000. Nothing here is hosted anywhere.
-
 require("dotenv").config();
 const os = require("os");
 const path = require("path");
@@ -22,21 +15,15 @@ const hardwareAdapter = require("./routes/hardware_adapter");
 const app = express();
 app.use(cors());
 app.use(express.json({ limit: "512kb" }));
-app.use(hardwareAdapter); // Hardware team firmware compatibility (/access_control/...)
+app.use(hardwareAdapter);
 
-
-// The demo dashboard: one plain HTML file, no build step. Opening
-// http://<laptop-lan-ip>:3000/ in a browser serves it.
 app.use(express.static(path.join(__dirname, "..", "web")));
 
-// One log line per request. Invaluable when a board is misbehaving and I need
-// to know whether it even reached me.
 app.use((req, _res, next) => {
   console.log(`[${new Date().toISOString()}] ${req.method} ${req.url}`);
   next();
 });
 
-// --- login -----------------------------------------------------------------
 app.post("/api/auth/login", async (req, res, next) => {
   try {
     const { email, password } = req.body || {};
@@ -51,13 +38,11 @@ app.post("/api/auth/login", async (req, res, next) => {
 
 app.get("/api/auth/me", requireUser, (req, res) => res.json({ user: req.user }));
 
-// --- the three groups of routes -------------------------------------------
-app.use("/api", deviceRoutes);   // the ESP32 boards
-app.use("/api", streamRoutes);   // the live feed
-app.use("/api", readRoutes);     // dashboard reads (login required)
-app.use("/api", adminRoutes);    // management (admin role for writes)
+app.use("/api", deviceRoutes);
+app.use("/api", streamRoutes);
+app.use("/api", readRoutes);
+app.use("/api", adminRoutes);
 
-// --- legacy system ---------------------------------------------------------
 app.post("/api/legacy/sync-now", requireUser, requireAdmin, async (_req, res, next) => {
   try {
     res.json(await legacy.runOnce());
@@ -75,7 +60,6 @@ app.get("/api/legacy/status", requireUser, async (_req, res, next) => {
   }
 });
 
-// --- health ----------------------------------------------------------------
 app.get("/api/health", async (_req, res) => {
   try {
     await query("SELECT 1");
@@ -85,7 +69,6 @@ app.get("/api/health", async (_req, res) => {
   }
 });
 
-// --- errors ----------------------------------------------------------------
 app.use((err, _req, res, _next) => {
   console.error(err);
   if (err.code === "23505") return res.status(409).json({ error: "duplicate", detail: err.detail });

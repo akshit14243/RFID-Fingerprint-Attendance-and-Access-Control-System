@@ -1,14 +1,9 @@
-// People, cards, rooms, devices and rules. Reading needs a login; anything
-// that changes data needs the admin role.
-
 const express = require("express");
 const { z } = require("zod");
 const { query, one } = require("../db");
 const { requireUser, requireAdmin } = require("../auth");
 
 const router = express.Router();
-
-// Login required on every route; the admin role is added on top for writes.
 
 const personSchema = z.object({
   employee_code: z.string().min(1).max(20),
@@ -28,7 +23,6 @@ const credentialSchema = z.object({
 
 const bad = (res, e) => res.status(400).json({ error: "bad_request", details: e.errors ?? String(e) });
 
-// --- people ---------------------------------------------------------------
 router.get("/people", requireUser, async (_req, res, next) => {
   try {
     const rows = await query(
@@ -81,7 +75,6 @@ router.put("/people/:id", requireUser, requireAdmin, async (req, res, next) => {
   }
 });
 
-// Deactivating, not deleting: the history must stay valid.
 router.delete("/people/:id", requireUser, requireAdmin, async (req, res, next) => {
   try {
     const row = await one("UPDATE people SET is_active = FALSE WHERE id = $1 RETURNING id", [req.params.id]);
@@ -92,7 +85,6 @@ router.delete("/people/:id", requireUser, requireAdmin, async (req, res, next) =
   }
 });
 
-// --- credentials ----------------------------------------------------------
 router.post("/credentials", requireUser, requireAdmin, async (req, res, next) => {
   try {
     const c = credentialSchema.safeParse(req.body);
@@ -108,7 +100,6 @@ router.post("/credentials", requireUser, requireAdmin, async (req, res, next) =>
   }
 });
 
-// Lost card: revoke it. The person and their history are untouched.
 router.post("/credentials/:id/revoke", requireUser, requireAdmin, async (req, res, next) => {
   try {
     const row = await one("UPDATE credentials SET is_revoked = TRUE WHERE id = $1 RETURNING *", [req.params.id]);
@@ -119,7 +110,6 @@ router.post("/credentials/:id/revoke", requireUser, requireAdmin, async (req, re
   }
 });
 
-// --- rooms ----------------------------------------------------------------
 router.get("/rooms", requireUser, async (_req, res, next) => {
   try {
     res.json({ rooms: await query("SELECT * FROM rooms ORDER BY room_name") });
@@ -141,7 +131,6 @@ router.post("/rooms", requireUser, requireAdmin, async (req, res, next) => {
   }
 });
 
-// --- devices --------------------------------------------------------------
 router.get("/devices", requireUser, async (_req, res, next) => {
   try {
     res.json({
@@ -174,7 +163,6 @@ router.post("/devices", requireUser, requireAdmin, async (req, res, next) => {
   }
 });
 
-// --- access rules ---------------------------------------------------------
 router.get("/rules", requireUser, async (_req, res, next) => {
   try {
     res.json({

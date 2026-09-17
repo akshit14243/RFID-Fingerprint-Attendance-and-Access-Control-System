@@ -65,7 +65,6 @@ const NAV = [
   {key:"admin", label:"Admin panel", icon:"settings"},
 ];
 
-/* ---------------- Tiny inline icon set ---------------- */
 function Icon({name, size=18}){
   const p = {width:size, height:size, viewBox:"0 0 24 24", fill:"none", stroke:"currentColor", strokeWidth:1.8, strokeLinecap:"round", strokeLinejoin:"round"};
   switch(name){
@@ -89,7 +88,6 @@ function Icon({name, size=18}){
   }
 }
 
-/* ---------------- Small building blocks ---------------- */
 function StatusBadge({status}){
   const map = {
     present:{c:"var(--teal)", bg:"var(--teal-bg)", label:"Present"},
@@ -155,7 +153,6 @@ function Td({children, mono, style}){
   return <td className={mono?"mono":""} style={{padding:"11px 14px", fontSize:13.5, borderBottom:"1px solid var(--border)", color:"var(--text)", ...style}}>{children}</td>;
 }
 
-/* ---------------- API Helper ---------------- */
 async function apiCall(path, method="GET", body=null, token="") {
   const headers = {};
   if (token) headers["Authorization"] = "Bearer " + token;
@@ -178,7 +175,6 @@ async function apiCall(path, method="GET", body=null, token="") {
   return data;
 }
 
-/* ---------------- Pages ---------------- */
 
 function DashboardPage({employees, attendance, activity, occupancy, dateStr}){
   const total = employees.length;
@@ -724,7 +720,6 @@ function LoginPage({onLogin}){
   );
 }
 
-/* ---------------- Main Shell ---------------- */
 function Shell(){
   const [token, setToken] = useState(sessionStorage.getItem("token") || "");
   const [page, setPage] = useState("dashboard");
@@ -733,7 +728,6 @@ function Shell(){
   const [now, setNow] = useState(new Date());
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
 
-  // Real backend data states
   const [employees, setEmployees] = useState([]);
   const [attendance, setAttendance] = useState([]);
   const [activity, setActivity] = useState([]);
@@ -742,13 +736,11 @@ function Shell(){
   const [rules, setRules] = useState([]);
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().slice(0,10));
 
-  // Live clock
   useEffect(()=>{
     const t = setInterval(()=> setNow(new Date()), 1000);
     return ()=>clearInterval(t);
   },[]);
 
-  // Fetch all live data from backend
   const loadData = useCallback(async () => {
     if (!token) return;
     try {
@@ -782,7 +774,6 @@ function Shell(){
     loadData();
   }, [loadData]);
 
-  // Server-Sent Events (SSE) Live Feed connection
   useEffect(() => {
     if (!token) return;
     const stream = new EventSource(API + "/api/stream");
@@ -803,14 +794,12 @@ function Shell(){
     return () => stream.close();
   }, [token, selectedDate]);
 
-  // Derived departments list
   const departments = useMemo(() => {
     const set = new Set(["Engineering", "Operations", "Finance", "HR", "Sales"]);
     employees.forEach(e => { if (e.department) set.add(e.department); });
     return Array.from(set);
   }, [employees]);
 
-  // Add Employee Handler
   const handleAddEmployee = async (empData) => {
     const person = await apiCall("/api/people", "POST", {
       employee_code: empData.code,
@@ -830,7 +819,6 @@ function Shell(){
     await loadData();
   };
 
-  // Deactivate Employee Handler
   const handleDeactivate = async (emp) => {
     if (emp.is_active) {
       if (!confirm("Deactivate " + emp.full_name + "? Their card access will be stopped.")) return;
@@ -842,7 +830,6 @@ function Shell(){
     await loadData();
   };
 
-  // Delete access rule
   const handleDeleteRule = async (ruleId) => {
     if (!confirm("Remove this access rule?")) return;
     await apiCall("/api/rules/" + ruleId, "DELETE", null, token);

@@ -1,6 +1,3 @@
-// Everything the ESP32 boards call: scan, sync, heartbeat, config.
-// Each request carries device_key; an unknown key gets 401 and nothing else.
-
 const express = require("express");
 const { z } = require("zod");
 const { query, one } = require("../db");
@@ -25,7 +22,6 @@ function badRequest(res, err) {
   return res.status(400).json({ error: "bad_request", details: err.errors ?? String(err) });
 }
 
-// --- 1. one live scan ------------------------------------------------------
 router.post("/scan", async (req, res, next) => {
   try {
     const parsed = scanSchema.safeParse(req.body);
@@ -41,9 +37,6 @@ router.post("/scan", async (req, res, next) => {
   }
 });
 
-// --- 2. offline buffer replay ---------------------------------------------
-// The board sends what it stored while Wi-Fi was down. Re-sending the same
-// batch is safe: anything already stored comes back as "duplicate".
 router.post("/sync", async (req, res, next) => {
   try {
     const parsed = syncSchema.safeParse(req.body);
@@ -67,7 +60,6 @@ router.post("/sync", async (req, res, next) => {
       });
     }
 
-    // stored[] is what the board is allowed to delete from its own buffer.
     res.json({
       accepted,
       duplicates,
@@ -80,7 +72,6 @@ router.post("/sync", async (req, res, next) => {
   }
 });
 
-// --- 3. heartbeat ----------------------------------------------------------
 router.post("/heartbeat", async (req, res, next) => {
   try {
     const { device_key, firmware_ver } = req.body || {};
@@ -93,16 +84,12 @@ router.post("/heartbeat", async (req, res, next) => {
       "UPDATE devices SET last_seen_at = now(), firmware_ver = COALESCE($1, firmware_ver) WHERE id = $2",
       [firmware_ver ?? null, device.id],
     );
-    // server_time lets the board correct its own clock drift.
     res.json({ server_time: new Date().toISOString() });
   } catch (err) {
     next(err);
   }
 });
 
-// --- 4. device config ------------------------------------------------------
-// The board pulls this on boot and every few minutes. It caches the allow-list
-// so it can still decide correctly while the Wi-Fi is down.
 router.get("/device/config", async (req, res, next) => {
   try {
     const device = await findDevice(String(req.query.device_key || ""));
