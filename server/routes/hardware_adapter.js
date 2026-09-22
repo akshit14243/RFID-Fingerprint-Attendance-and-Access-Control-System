@@ -1,4 +1,4 @@
-﻿const express = require("express");
+const express = require("express");
 const { query, one } = require("../db");
 const { broadcast } = require("../bus");
 const { findCredential, findRule, nextDirection } = require("../decision");
@@ -25,6 +25,19 @@ async function resolveDevice(esp32Id) {
 
 function cleanUid(raw) {
   return String(raw || "").toUpperCase().replace(/[^0-9A-F]/g, "");
+}
+
+function parseAccessTime(rawStr) {
+  if (!rawStr) return new Date();
+  // Match DD/MM/YYYY HH:MM:SS format from DS3231 RTC
+  const match = String(rawStr).trim().match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})\s+(\d{1,2}):(\d{1,2}):(\d{1,2})$/);
+  if (match) {
+    const [, day, month, year, hour, minute, second] = match;
+    const d = new Date(Number(year), Number(month) - 1, Number(day), Number(hour), Number(minute), Number(second));
+    if (!isNaN(d.getTime())) return d;
+  }
+  const fallback = new Date(rawStr);
+  return isNaN(fallback.getTime()) ? new Date() : fallback;
 }
 
 router.get("/access_control/authenticate.php", async (req, res, next) => {
@@ -91,9 +104,10 @@ router.get("/access_control/log_access.php", async (req, res, next) => {
     const userId = Number(req.query.user_id) || null;
     const doorId = Number(req.query.door_id) || 1;
     const rawNfc = req.query.nfc_uid;
-    const fpId = Number(req.query.fingerprint_id);
+    const fpId = Number(req.query.fingerprint_id) || 0;
     const result = String(req.query.result || "").toUpperCase();
     const reason = String(req.query.reason || "OK");
+    const rawAccessTime = req.query.access_time;
 
     const nfcUid = cleanUid(rawNfc);
     const decision = result === "GRANTED" ? "ALLOWED" : "DENIED";
@@ -113,6 +127,7 @@ router.get("/access_control/log_access.php", async (req, res, next) => {
 
     const direction = personId ? await nextDirection(personId, doorId) : "IN";
     const now = new Date();
+    const scannedAt = parseAccessTime(rawAccessTime);
     const eventIdStr = `ESP32-${Date.now().toString(36).toUpperCase()}-${Math.floor(Math.random()*1000)}`;
 
     const event = await one(
@@ -133,7 +148,7 @@ router.get("/access_control/log_access.php", async (req, res, next) => {
         decision,
         reason,
         fpId > 0,
-        now,
+        scannedAt,
         now,
         eventIdStr
       ]
@@ -156,7 +171,7 @@ router.get("/access_control/log_access.php", async (req, res, next) => {
       direction: direction,
       decision: decision,
       reason_code: reason,
-      scanned_at: now.toISOString(),
+      scanned_at: scannedAt.toISOString(),
       fingerprint_used: fpId > 0
     });
 
@@ -175,7 +190,7 @@ router.get("/access_control/sync.php", async (req, res, next) => {
     const roomId = device ? device.room_id : 1;
 
     const rows = await query(
-      `SELECT p.employee_code, p.full_name, c.card_uid, c.fingerprint_slot, p.is_active
+      `SELECT p.id AS user_id, p.employee_code, p.full_name, c.card_uid, c.fingerprint_slot, p.is_active
          FROM access_rules r
          JOIN people p ON (r.person_id = p.id OR (r.person_id IS NULL AND r.department = p.department))
          JOIN credentials c ON c.person_id = p.id
@@ -188,6 +203,7 @@ router.get("/access_control/sync.php", async (req, res, next) => {
     );
 
     const employees = rows.map((r) => ({
+      user_id: r.user_id,
       employee_id: r.employee_code,
       name: r.full_name,
       nfc_uid: r.card_uid,
