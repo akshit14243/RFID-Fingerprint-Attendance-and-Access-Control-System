@@ -136,3 +136,29 @@ JOIN people p ON p.id = e.person_id
 JOIN devices d ON d.id = e.device_id
 WHERE e.decision = 'ALLOWED' AND d.purpose = 'ATTENDANCE'
 GROUP BY p.id, p.full_name, p.employee_code, p.department, work_date;
+
+CREATE TABLE IF NOT EXISTS fingerprint_enrollment_jobs (
+  id SERIAL PRIMARY KEY,
+  person_id INT NOT NULL REFERENCES people(id) ON DELETE CASCADE,
+  target_device_id INT REFERENCES devices(id) ON DELETE CASCADE,
+  fingerprint_id INT NOT NULL,
+  card_uid TEXT,
+  template_path TEXT,
+  step TEXT NOT NULL DEFAULT 'WAITING_CARD',
+  status TEXT NOT NULL DEFAULT 'REQUESTED',
+  error_message TEXT,
+  created_at TIMESTAMPTZ DEFAULT now(),
+  updated_at TIMESTAMPTZ DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS device_commands (
+  command_id SERIAL PRIMARY KEY,
+  job_id INT REFERENCES fingerprint_enrollment_jobs(id) ON DELETE CASCADE,
+  esp32_id TEXT NOT NULL,
+  command TEXT NOT NULL,
+  user_id INT,
+  fingerprint_id INT,
+  status TEXT NOT NULL DEFAULT 'PENDING',
+  created_at TIMESTAMPTZ DEFAULT now(),
+  completed_at TIMESTAMPTZ
+);

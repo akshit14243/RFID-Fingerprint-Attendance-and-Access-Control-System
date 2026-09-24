@@ -11,11 +11,12 @@ async function findDevice(deviceKey) {
 }
 
 async function findCredential(cardUid) {
+  const clean = String(cardUid || "").replace(/[^0-9A-Fa-f]/g, "").toUpperCase();
   return one(
     `SELECT c.*, p.full_name, p.employee_code, p.department, p.is_active AS person_active
        FROM credentials c JOIN people p ON p.id = c.person_id
-      WHERE c.card_uid = $1`,
-    [cardUid],
+      WHERE UPPER(REPLACE(c.card_uid, ':', '')) = $1 OR UPPER(c.card_uid) = $2`,
+    [clean, String(cardUid || "").toUpperCase()],
   );
 }
 
@@ -123,7 +124,9 @@ async function decideAndLog(device, scan, opts = {}) {
   broadcast("access_event", {
     id: rows[0].id,
     person_name: result.person_name,
+    full_name: result.person_name,
     employee_code: cred ? cred.employee_code : null,
+    department: cred ? cred.department : null,
     card_uid: cardUid,
     room_name: device.room_name,
     device_label: device.device_label,

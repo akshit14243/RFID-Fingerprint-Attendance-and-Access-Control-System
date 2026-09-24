@@ -135,7 +135,12 @@ router.get("/devices", requireUser, async (_req, res, next) => {
   try {
     res.json({
       devices: await query(
-        "SELECT d.*, r.room_name FROM devices d JOIN rooms r ON r.id = d.room_id ORDER BY d.device_label"),
+        `SELECT d.*, r.room_name,
+                (d.last_seen_at IS NOT NULL AND d.last_seen_at > now() - interval '5 minutes') AS online
+           FROM devices d
+           JOIN rooms r ON r.id = d.room_id
+          ORDER BY d.device_label`
+      ),
     });
   } catch (err) {
     next(err);

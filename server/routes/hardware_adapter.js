@@ -7,18 +7,42 @@ const router = express.Router();
 
 async function resolveDevice(esp32Id) {
   const idStr = String(esp32Id || "").trim();
-  let dev = await one(
-    `SELECT d.*, r.room_name, r.is_restricted
-       FROM devices d JOIN rooms r ON r.id = d.room_id
-      WHERE d.device_key = $1 OR d.device_label ILIKE '%' || $1 || '%'`,
-    [idStr]
-  );
+  let dev = null;
+  if (idStr) {
+    dev = await one(
+      `SELECT d.*, r.room_name, r.is_restricted
+         FROM devices d JOIN rooms r ON r.id = d.room_id
+        WHERE d.device_key = $1 OR d.device_label ILIKE '%' || $1 || '%'`,
+      [idStr]
+    );
+    if (!dev) {
+      try {
+        dev = await one(
+          `INSERT INTO devices (device_key, device_label, room_id, purpose, source, last_seen_at)
+           VALUES ($1, $2, 1, 'ATTENDANCE', 'NATIVE', now())
+           ON CONFLICT (device_key) DO UPDATE SET last_seen_at = now()
+           RETURNING *`,
+          [idStr, `Reader ${idStr}`]
+        );
+        if (dev) {
+          const room = await one(`SELECT room_name, is_restricted FROM rooms WHERE id = $1`, [dev.room_id]);
+          if (room) {
+            dev.room_name = room.room_name;
+            dev.is_restricted = room.is_restricted;
+          }
+        }
+      } catch (e) {}
+    }
+  }
   if (!dev) {
     dev = await one(
       `SELECT d.*, r.room_name, r.is_restricted
          FROM devices d JOIN rooms r ON r.id = d.room_id
         WHERE d.id = 1`
     );
+  }
+  if (dev) {
+    await query("UPDATE devices SET last_seen_at = now() WHERE id = $1", [dev.id]);
   }
   return dev;
 }
@@ -54,6 +78,35 @@ router.get("/access_control/authenticate.php", async (req, res, next) => {
 
     if (!device) {
       return res.json({ success: false, message: "Unknown or inactive device" });
+    }
+
+    // Check if there is an active enrollment job waiting for a card tap
+    try {
+      const pendingJob = await one(
+        `SELECT id, person_id, fingerprint_id FROM fingerprint_enrollment_jobs
+          WHERE status IN ('REQUESTED', 'RUNNING') AND step = 'WAITING_CARD'
+            AND (target_device_id = $1 OR target_device_id IS NULL)
+          ORDER BY id DESC LIMIT 1`,
+        [device.id]
+      );
+      if (pendingJob) {
+        await query(
+          `UPDATE fingerprint_enrollment_jobs
+              SET card_uid = $1, step = 'CARD_TAPPED', status = 'RUNNING', updated_at = now()
+            WHERE id = $2`,
+          [nfcUid, pendingJob.id]
+        );
+        broadcast("enrollment_update", {
+          job_id: pendingJob.id,
+          person_id: pendingJob.person_id,
+          card_uid: nfcUid,
+          fingerprint_id: pendingJob.fingerprint_id,
+          step: "CARD_TAPPED",
+          status: "RUNNING"
+        });
+      }
+    } catch (e) {
+      console.warn("Enrollment auto-capture note:", e.message);
     }
 
     const cred = await findCredential(nfcUid);
@@ -108,20 +161,33 @@ router.get("/access_control/log_access.php", async (req, res, next) => {
     const result = String(req.query.result || "").toUpperCase();
     const reason = String(req.query.reason || "OK");
     const rawAccessTime = req.query.access_time;
+    const esp32Id = req.query.esp32_id;
 
     const nfcUid = cleanUid(rawNfc);
-    const decision = result === "GRANTED" ? "ALLOWED" : "DENIED";
+    const decision = (result === "GRANTED" || result === "ALLOWED") ? "ALLOWED" : "DENIED";
 
-    const dev = await one(`SELECT id FROM devices WHERE room_id = $1 LIMIT 1`, [doorId]);
+    const dev = await resolveDevice(esp32Id || `DOOR_${doorId}`);
     const deviceId = dev ? dev.id : 1;
 
     let credId = null;
     let personId = userId;
     if (nfcUid) {
-      const cred = await one(`SELECT id, person_id FROM credentials WHERE card_uid = $1`, [nfcUid]);
+      const cred = await one(
+        `SELECT id, person_id FROM credentials
+          WHERE UPPER(REPLACE(card_uid, ':', '')) = $1 OR UPPER(card_uid) = $2`,
+        [nfcUid, String(rawNfc || "").toUpperCase()]
+      );
       if (cred) {
         credId = cred.id;
         if (!personId) personId = cred.person_id;
+      }
+    }
+    // Also resolve by fingerprint slot if personId is still not identified!
+    if (!personId && fpId > 0) {
+      const cred = await one(`SELECT id, person_id FROM credentials WHERE fingerprint_slot = $1`, [fpId]);
+      if (cred) {
+        credId = cred.id;
+        personId = cred.person_id;
       }
     }
 
@@ -143,7 +209,7 @@ router.get("/access_control/log_access.php", async (req, res, next) => {
         doorId,
         personId,
         credId,
-        nfcUid || "UNKNOWN",
+        nfcUid || (fpId > 0 ? `FP-SLOT-${fpId}` : "--"),
         direction,
         decision,
         reason,
@@ -154,24 +220,42 @@ router.get("/access_control/log_access.php", async (req, res, next) => {
       ]
     );
 
-    let personName = "Unknown";
-    let roomName = "";
+    let personName = "";
+    let employeeCode = "";
+    let department = "";
     if (personId) {
-      const p = await one(`SELECT full_name FROM people WHERE id = $1`, [personId]);
-      if (p) personName = p.full_name;
+      const p = await one(`SELECT full_name, employee_code, department FROM people WHERE id = $1`, [personId]);
+      if (p) {
+        personName = p.full_name;
+        employeeCode = p.employee_code;
+        department = p.department;
+      }
+    }
+    if (!personName) {
+      personName = decision === "ALLOWED" ? (employeeCode ? `Employee ${employeeCode}` : "Authorized Personnel") : "Unregistered User";
     }
     const r = await one(`SELECT room_name FROM rooms WHERE id = $1`, [doorId]);
-    if (r) roomName = r.room_name;
+    const roomName = r ? r.room_name : (dev ? dev.room_name : "Door");
 
     broadcast("access_event", {
       event_id: event.id,
-      device_key: "ESP32_01",
+      id: event.id,
+      device_key: dev ? dev.device_key : "ESP32_01",
+      device_label: dev ? dev.device_label : "Main Entrance",
+      person_id: personId,
+      full_name: personName,
       person_name: personName,
+      employee_code: employeeCode,
+      department: department,
+      card_uid: nfcUid || (fpId > 0 ? `FP-SLOT-${fpId}` : "--"),
       room_name: roomName,
       direction: direction,
       decision: decision,
+      result: decision === "ALLOWED" ? "GRANTED" : "DENIED",
       reason_code: reason,
+      reason: reason,
       scanned_at: scannedAt.toISOString(),
+      access_time: scannedAt.toISOString(),
       fingerprint_used: fpId > 0
     });
 

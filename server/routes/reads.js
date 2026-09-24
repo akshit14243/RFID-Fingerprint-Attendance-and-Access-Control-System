@@ -37,11 +37,15 @@ router.get("/events", requireUser, async (req, res, next) => {
     const rows = await query(
       `SELECT e.id, e.scanned_at, e.received_at, e.direction, e.decision, e.reason_code,
               e.card_uid, e.fingerprint_used, e.source,
-              p.full_name, p.employee_code, p.department,
+              COALESCE(p.full_name, cp.full_name) AS full_name,
+              COALESCE(p.employee_code, cp.employee_code) AS employee_code,
+              COALESCE(p.department, cp.department) AS department,
               r.room_name, d.device_label,
               (e.received_at - e.scanned_at) > interval '1 minute' AS arrived_late
          FROM access_events e
          LEFT JOIN people p ON p.id = e.person_id
+         LEFT JOIN credentials c ON (c.id = e.credential_id OR (e.card_uid IS NOT NULL AND UPPER(REPLACE(c.card_uid, ':', '')) = UPPER(REPLACE(e.card_uid, ':', ''))))
+         LEFT JOIN people cp ON cp.id = c.person_id
          JOIN rooms   r ON r.id = e.room_id
          JOIN devices d ON d.id = e.device_id
         ${where.length ? "WHERE " + where.join(" AND ") : ""}
@@ -59,7 +63,13 @@ router.get("/attendance", requireUser, async (req, res, next) => {
   try {
     const date = req.query.date || new Date().toISOString().slice(0, 10);
     const rows = await query(
-      "SELECT * FROM v_attendance_days WHERE work_date = $1 ORDER BY full_name",
+      `SELECT p.id AS person_id, p.full_name, p.employee_code, p.department,
+              $1::date AS work_date,
+              v.first_in, v.last_out, v.hours
+         FROM people p
+         LEFT JOIN v_attendance_days v ON v.person_id = p.id AND v.work_date = $1::date
+        WHERE p.is_active = TRUE
+        ORDER BY p.full_name`,
       [date],
     );
     res.json({ date, count: rows.length, attendance: rows });
@@ -73,7 +83,7 @@ router.get("/devices/status", requireUser, async (_req, res, next) => {
     const rows = await query(
       `SELECT d.id, d.device_label, d.device_key, d.purpose, d.source, d.firmware_ver,
               d.last_seen_at, r.room_name,
-              (d.last_seen_at IS NOT NULL AND d.last_seen_at > now() - interval '3 minutes') AS online
+              (d.last_seen_at IS NOT NULL AND d.last_seen_at > now() - interval '5 minutes') AS online
          FROM devices d JOIN rooms r ON r.id = d.room_id
         ORDER BY r.room_name`,
     );

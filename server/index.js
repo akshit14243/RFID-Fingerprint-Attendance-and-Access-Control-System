@@ -11,11 +11,13 @@ const adminRoutes = require("./routes/admin");
 const { router: streamRoutes } = require("./routes/stream");
 const legacy = require("./legacy/sync");
 const hardwareAdapter = require("./routes/hardware_adapter");
+const enrollmentRoutes = require("./routes/enrollment");
 
 const app = express();
 app.use(cors());
 app.use(express.json({ limit: "512kb" }));
 app.use(hardwareAdapter);
+app.use(enrollmentRoutes);
 
 app.use(express.static(path.join(__dirname, "..", "web")));
 

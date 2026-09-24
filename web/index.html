@@ -1,9 +1,15 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>Attendance & Access Control — Admin Console</title>
+<script>
+  (function() {
+    var savedTheme = localStorage.getItem("theme") || "light";
+    document.documentElement.setAttribute("data-theme", savedTheme);
+  })();
+</script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
@@ -11,21 +17,21 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
 <style>
   :root{
-    --bg:#0b1220; --surface:#141c2f; --surface-2:#1a2438; --border:#26314a;
-    --text:#e7ebf5; --text-dim:#8d97ad; --text-faint:#5c6680;
-    --primary:#4c6fff; --primary-dim:#2a3d8f;
-    --teal:#2dd4bf; --teal-bg:#0e2e2a;
-    --amber:#f5a524; --amber-bg:#332208;
-    --rose:#f5738a; --rose-bg:#331119;
-    --radius:10px;
-  }
-  [data-theme="light"]{
     --bg:#f4f6fb; --surface:#ffffff; --surface-2:#eef1f8; --border:#dde3ef;
     --text:#1c2333; --text-dim:#5b6479; --text-faint:#98a1b5;
     --primary:#3454d1; --primary-dim:#dde5ff;
     --teal:#0f8f7a; --teal-bg:#e1f5f0;
     --amber:#b8710a; --amber-bg:#fdf1dd;
     --rose:#c23b57; --rose-bg:#fbe6ea;
+    --radius:10px;
+  }
+  [data-theme="dark"]{
+    --bg:#0b1220; --surface:#141c2f; --surface-2:#1a2438; --border:#26314a;
+    --text:#e7ebf5; --text-dim:#8d97ad; --text-faint:#5c6680;
+    --primary:#4c6fff; --primary-dim:#2a3d8f;
+    --teal:#2dd4bf; --teal-bg:#0e2e2a;
+    --amber:#f5a524; --amber-bg:#332208;
+    --rose:#f5738a; --rose-bg:#331119;
   }
   *{box-sizing:border-box;}
   html,body{margin:0;padding:0;}
@@ -43,8 +49,32 @@
   ::-webkit-scrollbar-thumb{background:var(--border); border-radius:8px;}
   @keyframes flashIn { from { background: var(--primary-dim); } to { background: transparent; } }
   .flash-row { animation: flashIn 1.4s ease-out; }
-  .modal-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,0.6); display: flex; align-items: center; justify-content: center; z-index: 1000; padding: 20px; }
-  .modal-box { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; width: 100%; max-width: 480px; padding: 24px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
+  .modal-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,0.65); backdrop-filter: blur(4px); display: flex; align-items: center; justify-content: center; z-index: 1000; padding: 20px; }
+  .modal-box { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; width: 100%; max-width: 500px; padding: 24px; box-shadow: 0 16px 40px rgba(0,0,0,0.6); }
+  .modal-box-large { max-width: 580px; }
+  @keyframes pulseGlow {
+    0% { transform: scale(0.98); box-shadow: 0 0 0 0 rgba(76, 111, 255, 0.45); }
+    70% { transform: scale(1.02); box-shadow: 0 0 0 20px rgba(76, 111, 255, 0); }
+    100% { transform: scale(0.98); box-shadow: 0 0 0 0 rgba(76, 111, 255, 0); }
+  }
+  @keyframes pulseGreen {
+    0% { transform: scale(0.98); box-shadow: 0 0 0 0 rgba(45, 212, 191, 0.5); }
+    70% { transform: scale(1.02); box-shadow: 0 0 0 20px rgba(45, 212, 191, 0); }
+    100% { transform: scale(0.98); box-shadow: 0 0 0 0 rgba(45, 212, 191, 0); }
+  }
+  @keyframes scanLine {
+    0% { top: 4px; opacity: 0.9; }
+    50% { top: calc(100% - 6px); opacity: 1; }
+    100% { top: 4px; opacity: 0.9; }
+  }
+  @keyframes spinSlow {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+  }
+  .spin-slow { animation: spinSlow 1.5s linear infinite; }
+  .nfc-card-glow { animation: pulseGlow 2s infinite ease-in-out; }
+  .nfc-card-success { animation: pulseGreen 2s infinite ease-in-out; }
+  .scanner-beam { position: absolute; left: 0; right: 0; height: 3px; background: linear-gradient(90deg, transparent, #2dd4bf, transparent); box-shadow: 0 0 12px #2dd4bf; animation: scanLine 2s ease-in-out infinite; }
 </style>
 </head>
 <body>
@@ -82,6 +112,12 @@ function Icon({name, size=18}){
     case "logout": return <svg {...p}><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5"/><path d="M21 12H9"/></svg>;
     case "chevron": return <svg {...p}><path d="M9 18l6-6-6-6"/></svg>;
     case "trash": return <svg {...p}><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>;
+    case "nfc": return <svg {...p}><rect x="3" y="4" width="18" height="16" rx="3"/><path d="M7 10a5 5 0 0 1 7.1 0M9.5 12.5a1.5 1.5 0 0 1 2.1 0"/><circle cx="17" cy="15" r="1"/></svg>;
+    case "fingerprint": return <svg {...p}><path d="M12 10a2 2 0 0 0-2 2c0 1.02-.1 2.51-.26 4"/><path d="M14 13.12c0 2.38 0 6.38-1 8.88"/><path d="M2 16h.01"/><path d="M21.8 16c.2-2 .131-5.354 0-6"/><path d="M9 6.8a6 6 0 0 1 9 5.2c0 .47 0 1.17-.02 2"/><path d="M5.5 10a8 8 0 0 1 13 0"/><path d="M2 12a10 10 0 0 1 20 0"/><path d="M12 2v2"/></svg>;
+    case "arrow-right": return <svg {...p}><path d="M5 12h14M12 5l7 7-7 7"/></svg>;
+    case "loader": return <svg {...p} className="spin-slow"><line x1="12" y1="2" x2="12" y2="6"/><line x1="12" y1="18" x2="12" y2="22"/><line x1="4.93" y1="4.93" x2="7.76" y2="7.76"/><line x1="16.24" y1="16.24" x2="19.07" y2="19.07"/><line x1="2" y1="12" x2="6" y2="12"/><line x1="18" y1="12" x2="22" y2="12"/><line x1="4.93" y1="19.07" x2="7.76" y2="16.24"/><line x1="16.24" y1="7.76" x2="19.07" y2="4.93"/></svg>;
+    case "radio": return <svg {...p}><path d="M4.93 4.93a10 10 0 0 1 14.14 0M7.76 7.76a6 6 0 0 1 8.48 0M10.6 10.6a2 2 0 0 1 2.8 0"/><circle cx="12" cy="12" r="1"/></svg>;
+    case "check-circle": return <svg {...p}><circle cx="12" cy="12" r="9"/><path d="M8.5 12l2.5 2.5 5-5"/></svg>;
     default: return null;
   }
 }
@@ -178,110 +214,619 @@ async function apiCall(path, method="GET", body=null, token="") {
   return data;
 }
 
+function DashboardPage({
+  employees,
+  attendance,
+  activity,
+  occupancy,
+  dateStr
+ }) {
+  const formatTime = (value) => {
+    if (!value) return "--";
+    const d = new Date(value);
+    if (isNaN(d.getTime())) return value;
+    return d.toLocaleTimeString([], {
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit"
+    });
+  };
 
-function DashboardPage({employees, attendance, activity, occupancy, dateStr}){
-  const total = employees.length;
-  const present = attendance.filter(a => a.first_in).length;
-  const late = attendance.filter(a => {
-    if (!a.first_in) return false;
-    const time = new Date(a.first_in).toLocaleTimeString("en-GB", {hour:"2-digit", minute:"2-digit"});
-    return time > "09:45";
-  }).length;
-  const absent = total > present ? (total - present) : 0;
-  const active = occupancy.count || 0;
-  const pct = total > 0 ? Math.round((present / total) * 100) : 0;
+  const formatDate = (value) => {
+    if (!value) return "--";
+    const d = new Date(value);
+    if (isNaN(d.getTime())) return value;
+    return d.toLocaleDateString([], {
+      day: "2-digit",
+      month: "short",
+      year: "numeric"
+    });
+  };
+
+  const getEmployeeName = (ev) => {
+    if (ev.full_name && ev.full_name !== "Unknown") return ev.full_name;
+    if (ev.person_name && ev.person_name !== "Unknown") return ev.person_name;
+    if (ev.name && ev.name !== "Unknown") return ev.name;
+
+    if (employees && employees.length > 0) {
+      if (ev.person_id) {
+        const found = employees.find(e => Number(e.id) === Number(ev.person_id));
+        if (found && found.full_name) return found.full_name;
+      }
+      if (ev.employee_code) {
+        const found = employees.find(e => (e.employee_code || "").toUpperCase() === (ev.employee_code || "").toUpperCase());
+        if (found && found.full_name) return found.full_name;
+      }
+      if (ev.card_uid) {
+        const cleanCard = String(ev.card_uid).replace(/[^0-9A-Fa-f]/g, "").toUpperCase();
+        const found = employees.find(e => e.card_uid && String(e.card_uid).replace(/[^0-9A-Fa-f]/g, "").toUpperCase() === cleanCard);
+        if (found && found.full_name) return found.full_name;
+      }
+    }
+
+    if (ev.employee_code) return ev.employee_code;
+    if (ev.person_id) return "Employee #" + ev.person_id;
+    return "Unregistered User";
+  };
+
+  const getEmployeeCode = (ev) => {
+    if (ev.employee_code && ev.employee_code !== "--") return ev.employee_code;
+    if (employees && employees.length > 0) {
+      if (ev.person_id) {
+        const found = employees.find(e => Number(e.id) === Number(ev.person_id));
+        if (found && found.employee_code) return found.employee_code;
+      }
+      if (ev.card_uid) {
+        const cleanCard = String(ev.card_uid).replace(/[^0-9A-Fa-f]/g, "").toUpperCase();
+        const found = employees.find(e => e.card_uid && String(e.card_uid).replace(/[^0-9A-Fa-f]/g, "").toUpperCase() === cleanCard);
+        if (found && found.employee_code) return found.employee_code;
+      }
+    }
+    return "--";
+  };
+
+  const getEmployeeDept = (ev) => {
+    if (ev.department) return ev.department;
+    if (employees && employees.length > 0) {
+      if (ev.person_id) {
+        const found = employees.find(e => Number(e.id) === Number(ev.person_id));
+        if (found && found.department) return found.department;
+      }
+      if (ev.card_uid) {
+        const cleanCard = String(ev.card_uid).replace(/[^0-9A-Fa-f]/g, "").toUpperCase();
+        const found = employees.find(e => e.card_uid && String(e.card_uid).replace(/[^0-9A-Fa-f]/g, "").toUpperCase() === cleanCard);
+        if (found && found.department) return found.department;
+      }
+    }
+    return null;
+  };
+
+  const getDecision = (ev) => {
+    const value = String(
+      ev.decision ||
+      ev.result ||
+      ""
+    ).toUpperCase();
+
+    if (value === "ALLOWED" || value === "GRANTED") {
+      return "GRANTED";
+    }
+
+    return "DENIED";
+  };
+
+  const recentLogs = Array.isArray(activity)
+    ? activity.slice(0, 30)
+    : [];
+
+  const grantedCount = recentLogs.filter(
+    ev => getDecision(ev) === "GRANTED"
+  ).length;
+
+  const deniedCount = recentLogs.filter(
+    ev => getDecision(ev) === "DENIED"
+  ).length;
 
   return (
-    <div>
-      <div style={{display:"grid", gridTemplateColumns:"repeat(auto-fit, minmax(150px,1fr))", gap:14, marginBottom:22}}>
-        <StatCard label="Total employees" value={total} />
-        <StatCard label="Present today" value={present} accent="var(--teal)" />
-        <StatCard label="Late today" value={late} accent="var(--amber)" />
-        <StatCard label="Absent today" value={absent} accent="var(--rose)" />
-        <StatCard label="Currently active" value={active} sub="inside rooms right now" />
-        <StatCard label="Attendance rate" value={pct+"%"} accent="var(--primary)" />
+    <div style={{display:"flex", flexDirection:"column", gap:18}}>
+
+      {/* Summary cards */}
+      <div style={{
+        display:"grid",
+        gridTemplateColumns:"repeat(4, minmax(0, 1fr))",
+        gap:12
+      }}>
+
+        <div style={{
+          background:"var(--surface)",
+          border:"1px solid var(--border)",
+          borderRadius:12,
+          padding:16
+        }}>
+          <div style={{
+            fontSize:12,
+            color:"var(--text-dim)",
+            marginBottom:7
+          }}>
+            Employees
+          </div>
+
+          <div style={{
+            fontSize:25,
+            fontWeight:700
+          }}>
+            {employees?.length || 0}
+          </div>
+        </div>
+
+        <div style={{
+          background:"var(--surface)",
+          border:"1px solid var(--border)",
+          borderRadius:12,
+          padding:16
+        }}>
+          <div style={{
+            fontSize:12,
+            color:"var(--text-dim)",
+            marginBottom:7
+          }}>
+            Currently Inside
+          </div>
+
+          <div style={{
+            fontSize:25,
+            fontWeight:700
+          }}>
+            {occupancy?.count || 0}
+          </div>
+        </div>
+
+        <div style={{
+          background:"var(--surface)",
+          border:"1px solid var(--border)",
+          borderRadius:12,
+          padding:16
+        }}>
+          <div style={{
+            fontSize:12,
+            color:"var(--text-dim)",
+            marginBottom:7
+          }}>
+            Recent Granted
+          </div>
+
+          <div style={{
+            fontSize:25,
+            fontWeight:700
+          }}>
+            {grantedCount}
+          </div>
+        </div>
+
+        <div style={{
+          background:"var(--surface)",
+          border:"1px solid var(--border)",
+          borderRadius:12,
+          padding:16
+        }}>
+          <div style={{
+            fontSize:12,
+            color:"var(--text-dim)",
+            marginBottom:7
+          }}>
+            Recent Denied
+          </div>
+
+          <div style={{
+            fontSize:25,
+            fontWeight:700
+          }}>
+            {deniedCount}
+          </div>
+        </div>
+
       </div>
 
-      <div style={{display:"grid", gridTemplateColumns:"1.4fr 1fr", gap:16}}>
-        <Card>
-          <div style={{display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:14}}>
-            <div style={{fontSize:14.5, fontWeight:600}}>Today's attendance</div>
-            <span className="mono" style={{fontSize:12, color:"var(--text-faint)"}}>{dateStr}</span>
-          </div>
-          <div style={{overflowX:"auto"}}>
-            <table style={{width:"100%", borderCollapse:"collapse"}}>
-              <thead><tr>
-                <Th>Employee</Th><Th>Department</Th><Th>Check-in</Th><Th>Check-out</Th><Th>Status</Th>
-              </tr></thead>
-              <tbody>
-                {attendance.length === 0 ? (
-                  <tr><Td colSpan={5} style={{textAlign:"center", color:"var(--text-dim)"}}>No attendance records today yet.</Td></tr>
-                ) : (
-                  attendance.map((a,i)=>{
-                    const inTime = a.first_in ? new Date(a.first_in).toLocaleTimeString([], {hour:"2-digit", minute:"2-digit"}) : "—";
-                    const outTime = a.last_out ? new Date(a.last_out).toLocaleTimeString([], {hour:"2-digit", minute:"2-digit"}) : "—";
-                    let status = "absent";
-                    if (a.first_in) {
-                      const t = new Date(a.first_in).toLocaleTimeString("en-GB", {hour:"2-digit", minute:"2-digit"});
-                      status = t > "09:45" ? "late" : "present";
-                    }
-                    return (
-                      <tr key={i}>
-                        <Td>{a.full_name}</Td>
-                        <Td>{a.department}</Td>
-                        <Td mono>{inTime}</Td>
-                        <Td mono>{outTime}</Td>
-                        <Td><StatusBadge status={status}/></Td>
-                      </tr>
-                    );
-                  })
-                )}
-              </tbody>
-            </table>
-          </div>
-        </Card>
 
-        <Card>
-          <div style={{display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:14}}>
-            <div style={{fontSize:14.5, fontWeight:600}}>Live scan activity</div>
-            <span style={{fontSize:11.5, color:"var(--teal)", display:"flex", alignItems:"center", gap:5}}>
-              <span style={{width:7, height:7, borderRadius:99, background:"var(--teal)"}}></span> live
-            </span>
+      {/* Recent access logs */}
+      <div style={{
+        background:"var(--surface)",
+        border:"1px solid var(--border)",
+        borderRadius:12,
+        overflow:"hidden"
+      }}>
+
+        <div style={{
+          padding:"15px 18px",
+          borderBottom:"1px solid var(--border)",
+          display:"flex",
+          justifyContent:"space-between",
+          alignItems:"center"
+        }}>
+
+          <div>
+            <div style={{
+              fontSize:15,
+              fontWeight:700
+            }}>
+              Recent Access Logs
+            </div>
+
+            <div style={{
+              fontSize:11.5,
+              color:"var(--text-faint)",
+              marginTop:3
+            }}>
+              Live access activity from connected ESP32 devices
+            </div>
           </div>
-          <div style={{display:"flex", flexDirection:"column", gap:0, maxHeight: 380, overflowY: "auto"}}>
-            {activity.length === 0 ? (
-              <div style={{padding:"20px 0", textAlign:"center", color:"var(--text-dim)", fontSize:13}}>Waiting for live scans...</div>
-            ) : (
-              activity.map((a,i)=>(
-                <div key={a.id || i} className={i===0?"flash-row":""} style={{
-                  display:"flex", alignItems:"center", gap:12, padding:"10px 0",
-                  borderBottom: i<activity.length-1 ? "1px solid var(--border)" : "none"
+
+          <div style={{
+            fontSize:11,
+            color:"var(--text-faint)"
+          }}>
+            Showing {recentLogs.length} events
+          </div>
+
+        </div>
+
+
+        {recentLogs.length === 0 ? (
+
+          <div style={{
+            padding:"35px 20px",
+            textAlign:"center",
+            color:"var(--text-faint)",
+            fontSize:13
+          }}>
+            No access logs available yet.
+          </div>
+
+        ) : (
+
+          <div style={{overflowX:"auto"}}>
+
+            <table style={{
+              width:"100%",
+              borderCollapse:"collapse",
+              fontSize:12.5
+            }}>
+
+              <thead>
+                <tr style={{
+                  borderBottom:"1px solid var(--border)",
+                  color:"var(--text-dim)",
+                  textAlign:"left"
                 }}>
+
+                  <th style={{padding:"10px 14px", fontWeight:600}}>
+                    Time
+                  </th>
+
+                  <th style={{padding:"10px 14px", fontWeight:600}}>
+                    Employee
+                  </th>
+
+                  <th style={{padding:"10px 14px", fontWeight:600}}>
+                    Employee ID
+                  </th>
+
+                  <th style={{padding:"10px 14px", fontWeight:600}}>
+                    Door
+                  </th>
+
+                  <th style={{padding:"10px 14px", fontWeight:600}}>
+                    Direction
+                  </th>
+
+                  <th style={{padding:"10px 14px", fontWeight:600}}>
+                    Card UID
+                  </th>
+
+                  <th style={{padding:"10px 14px", fontWeight:600}}>
+                    Fingerprint
+                  </th>
+
+                  <th style={{padding:"10px 14px", fontWeight:600}}>
+                    Result
+                  </th>
+
+                  <th style={{padding:"10px 14px", fontWeight:600}}>
+                    Reason
+                  </th>
+
+                </tr>
+              </thead>
+
+              <tbody>
+
+                {recentLogs.map((ev, index) => {
+
+                  const decision = getDecision(ev);
+
+                  const granted = decision === "GRANTED";
+
+                  return (
+                    <tr
+                      key={ev.id || ev.event_id || index}
+                      style={{
+                        borderBottom:"1px solid var(--border)"
+                      }}
+                    >
+
+                      {/* Time */}
+                      <td style={{
+                        padding:"11px 14px",
+                        whiteSpace:"nowrap"
+                      }}>
+                        <div className="mono">
+                          {formatTime(
+                            ev.scanned_at ||
+                            ev.access_time ||
+                            ev.received_at
+                          )}
+                        </div>
+
+                        <div style={{
+                          fontSize:10.5,
+                          color:"var(--text-faint)",
+                          marginTop:2
+                        }}>
+                          {formatDate(
+                            ev.scanned_at ||
+                            ev.access_time ||
+                            ev.received_at
+                          )}
+                        </div>
+                      </td>
+
+
+                      {/* Employee */}
+                      <td style={{
+                        padding:"11px 14px",
+                        whiteSpace:"nowrap"
+                      }}>
+                        <div style={{fontWeight:600}}>
+                          {getEmployeeName(ev)}
+                        </div>
+
+                        {getEmployeeDept(ev) && (
+                          <div style={{
+                            fontSize:10.5,
+                            color:"var(--text-faint)",
+                            marginTop:2
+                          }}>
+                            {getEmployeeDept(ev)}
+                          </div>
+                        )}
+                      </td>
+
+
+                      {/* Employee ID */}
+                      <td style={{
+                        padding:"11px 14px"
+                      }}>
+                        <span className="mono">
+                          {getEmployeeCode(ev)}
+                        </span>
+                      </td>
+
+
+                      {/* Door */}
+                      <td style={{
+                        padding:"11px 14px",
+                        whiteSpace:"nowrap"
+                      }}>
+                        {ev.room_name ||
+                         ev.device_label ||
+                         "--"}
+                      </td>
+
+
+                      {/* Direction */}
+                      <td style={{
+                        padding:"11px 14px"
+                      }}>
+                        {ev.direction ? (
+                          <span style={{
+                            fontSize:11,
+                            padding:"3px 7px",
+                            borderRadius:5,
+                            background:"var(--surface-2)"
+                          }}>
+                            {ev.direction}
+                          </span>
+                        ) : (
+                          "--"
+                        )}
+                      </td>
+
+
+                      {/* Card */}
+                      <td style={{
+                        padding:"11px 14px"
+                      }}>
+                        <span
+                          className="mono"
+                          style={{
+                            fontSize:11
+                          }}
+                        >
+                          {ev.card_uid || "--"}
+                        </span>
+                      </td>
+
+
+                      {/* Fingerprint */}
+                      <td style={{
+                        padding:"11px 14px",
+                        textAlign:"center"
+                      }}>
+                        {ev.fingerprint_used ? (
+                          <span style={{
+                            fontSize:12
+                          }}>
+                            ✓
+                          </span>
+                        ) : (
+                          <span style={{
+                            color:"var(--text-faint)"
+                          }}>
+                            —
+                          </span>
+                        )}
+                      </td>
+
+
+                      {/* Result */}
+                      <td style={{
+                        padding:"11px 14px"
+                      }}>
+                        <span style={{
+                          display:"inline-flex",
+                          alignItems:"center",
+                          padding:"4px 8px",
+                          borderRadius:6,
+                          fontSize:11,
+                          fontWeight:700,
+                          background: granted
+                            ? "rgba(34,197,94,0.12)"
+                            : "rgba(239,68,68,0.12)",
+                          color: granted
+                            ? "#22c55e"
+                            : "#ef4444"
+                        }}>
+                          {decision}
+                        </span>
+                      </td>
+
+
+                      {/* Reason */}
+                      <td style={{
+                        padding:"11px 14px",
+                        color:"var(--text-dim)",
+                        whiteSpace:"nowrap"
+                      }}>
+                        {ev.reason_code || "--"}
+                      </td>
+
+                    </tr>
+                  );
+
+                })}
+
+              </tbody>
+
+            </table>
+
+          </div>
+
+        )}
+
+      </div>
+
+
+      {/* Occupancy */}
+      <div style={{
+        background:"var(--surface)",
+        border:"1px solid var(--border)",
+        borderRadius:12,
+        overflow:"hidden"
+      }}>
+
+        <div style={{
+          padding:"15px 18px",
+          borderBottom:"1px solid var(--border)"
+        }}>
+          <div style={{
+            fontSize:15,
+            fontWeight:700
+          }}>
+            Current Occupancy
+          </div>
+
+          <div style={{
+            fontSize:11.5,
+            color:"var(--text-faint)",
+            marginTop:3
+          }}>
+            People currently recorded inside
+          </div>
+        </div>
+
+        {occupancy?.people?.length ? (
+
+          <div style={{
+            display:"flex",
+            flexDirection:"column"
+          }}>
+
+            {occupancy.people.slice(0, 10).map((person, index) => (
+
+              <div
+                key={person.person_id || person.id || index}
+                style={{
+                  display:"flex",
+                  justifyContent:"space-between",
+                  alignItems:"center",
+                  padding:"11px 18px",
+                  borderBottom:"1px solid var(--border)"
+                }}
+              >
+
+                <div>
                   <div style={{
-                    width:34, height:34, borderRadius:8, background:"var(--surface-2)",
-                    display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0
-                  }}><Icon name="id" size={16}/></div>
-                  <div style={{flex:1, minWidth:0}}>
-                    <div style={{fontSize:13, fontWeight:600}}>{a.full_name || a.person_name || "Unknown card"} <span className="mono" style={{color:"var(--text-faint)", fontWeight:400}}>· {a.room_name || "Door"}</span></div>
-                    <div style={{fontSize:12, color:"var(--text-dim)"}}>{a.direction || "SCAN"} &middot; <span className="mono">{a.card_uid || a.reason_code || ""}</span></div>
+                    fontSize:13,
+                    fontWeight:600
+                  }}>
+                    {person.full_name || person.name || (person.employee_code ? ("Employee " + person.employee_code) : "Registered Personnel")}
                   </div>
-                  <div style={{textAlign:"right"}}>
-                    <div className="mono" style={{fontSize:11.5, color:"var(--text-faint)"}}>
-                      {a.scanned_at ? new Date(a.scanned_at).toLocaleTimeString() : "—"}
-                    </div>
-                    <StatusBadge status={a.decision || (a.status==="present"?"present":"active")}/>
+
+                  <div style={{
+                    fontSize:11,
+                    color:"var(--text-faint)",
+                    marginTop:2
+                  }}>
+                    {person.employee_code || "--"}
+                    {person.room_name
+                      ? " · " + person.room_name
+                      : ""}
                   </div>
                 </div>
-              ))
-            )}
+
+                <div style={{
+                  fontSize:11,
+                  color:"var(--primary)"
+                }}>
+                  INSIDE
+                </div>
+
+              </div>
+
+            ))}
+
           </div>
-        </Card>
+
+        ) : (
+
+          <div style={{
+            padding:"25px",
+            textAlign:"center",
+            color:"var(--text-faint)",
+            fontSize:12.5
+          }}>
+            No people currently inside.
+          </div>
+
+        )}
+
       </div>
+
     </div>
   );
-}
+ }
 
-function EmployeesPage({employees, departments, onSelect, onAddClick, onDeactivate}){
+ function EmployeesPage({employees, departments, onSelect, onAddClick, onDeactivate}){
   const [q, setQ] = useState("");
   const [dept, setDept] = useState("all");
   const filtered = employees.filter(e =>
@@ -500,7 +1045,7 @@ function AttendancePage({attendance, departments, selectedDate, onDateChange}){
   );
 }
 
-function DevicesPage({devices, rooms, onAddDevice, onDeleteDevice}){
+function DevicesPage({devices, rooms, onAddDevice, onDeleteDevice, onUpdatePurpose}){
   const [isAddOpen, setIsAddOpen] = useState(false);
 
   return (
@@ -523,11 +1068,29 @@ function DevicesPage({devices, rooms, onAddDevice, onDeleteDevice}){
                 <StatusBadge status={d.online ? "online" : "offline"}/>
               </div>
               <div style={{display:"flex", flexDirection:"column", gap:8, fontSize:13}}>
-                <div style={{display:"flex", justifyContent:"space-between"}}><span style={{color:"var(--text-dim)"}}>Purpose</span><span>{d.purpose || "DOOR"}</span></div>
+                <div style={{display:"flex", justifyContent:"space-between", alignItems:"center"}}>
+                  <span style={{color:"var(--text-dim)"}}>Purpose</span>
+                  <select
+                    value={d.purpose || "DOOR"}
+                    onChange={(e)=>onUpdatePurpose && onUpdatePurpose(d.id, e.target.value)}
+                    style={{
+                      background:"var(--surface-2)",
+                      color: d.purpose==="ATTENDANCE" ? "var(--teal)" : "var(--primary)",
+                      border:"1px solid var(--border)",
+                      borderRadius:6,
+                      padding:"3px 8px",
+                      fontSize:12,
+                      fontWeight:600,
+                      cursor:"pointer"
+                    }}
+                  >
+                    <option value="DOOR">DOOR (Access control)</option>
+                    <option value="ATTENDANCE">ATTENDANCE (Clock-in)</option>
+                  </select>
+                </div>
                 <div style={{display:"flex", justifyContent:"space-between"}}><span style={{color:"var(--text-dim)"}}>Source</span><span className="mono">{d.source || "NATIVE"}</span></div>
                 <div style={{display:"flex", justifyContent:"space-between"}}><span style={{color:"var(--text-dim)"}}>Last seen</span><span>{d.last_seen_at ? new Date(d.last_seen_at).toLocaleTimeString() : "Never"}</span></div>
                 <div style={{display:"flex", justifyContent:"space-between"}}><span style={{color:"var(--text-dim)"}}>Firmware</span><span className="mono">{d.firmware_ver || "v0.1.0"}</span></div>
-                <div style={{display:"flex", justifyContent:"space-between"}}><span style={{color:"var(--text-dim)"}}>Status</span><StatusBadge status={d.is_active ? "active" : "inactive"}/></div>
               </div>
               <div style={{marginTop:16, paddingTop:12, borderTop:"1px solid var(--border)", display:"flex", justifyContent:"flex-end"}}>
                 <button
@@ -725,95 +1288,582 @@ function AdminPage({departments, employees, rules, shifts, holidays, rooms, onAd
   );
 }
 
-function AddEmployeeModal({isOpen, onClose, onSave}){
+function AddEmployeeModal({isOpen, onClose, onSaved, departments=[], devices=[], token=""}){
+  const [step, setStep] = useState(1); // 1: Details, 2: Device, 3: NFC Tap, 4: Fingerprint, 5: Sync
   const [code, setCode] = useState("");
   const [name, setName] = useState("");
   const [dept, setDept] = useState("Engineering");
   const [type, setType] = useState("EMPLOYEE");
   const [email, setEmail] = useState("");
-  const [card, setCard] = useState("");
-  const [fp, setFp] = useState("");
+  const [selectedDeviceId, setSelectedDeviceId] = useState("");
+  
+  const [jobId, setJobId] = useState(null);
+  const [fingerprintId, setFingerprintId] = useState(null);
+  const [cardUid, setCardUid] = useState("");
+  const [fingerPass, setFingerPass] = useState(0); // 0: none, 1: first pass, 2: second pass
+  const [syncProgress, setSyncProgress] = useState(0);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState("");
 
+  // Set default department and device when modal opens
+  useEffect(() => {
+    if (isOpen) {
+      setStep(1);
+      setCode("");
+      setName("");
+      setEmail("");
+      setJobId(null);
+      setFingerprintId(null);
+      setCardUid("");
+      setFingerPass(0);
+      setSyncProgress(0);
+      setLoading(false);
+      setErr("");
+      if (departments && departments.length > 0) {
+        setDept(departments[0].name || departments[0] || "Engineering");
+      }
+      if (devices && devices.length > 0) {
+        const onlineHrDev = devices.find(d => d.online === true && ((d.device_key || "").toUpperCase().includes("HR") || (d.device_label || "").toUpperCase().includes("HR")));
+        const anyOnlineDev = onlineHrDev || devices.find(d => d.online === true);
+        const fallbackDev = anyOnlineDev || devices[0];
+        setSelectedDeviceId(fallbackDev.id);
+      }
+    }
+  }, [isOpen, departments, devices]);
+
+  // Selected device and online status
+  const selectedDev = (devices || []).find(d => String(d.id) === String(selectedDeviceId)) || (devices && devices[0]);
+  const isSelectedOnline = selectedDev ? (selectedDev.online === true) : false;
+
+  // Polling for hardware updates during active enrollment job
+  useEffect(() => {
+    if (!isOpen || !jobId || step < 3 || step > 4) return;
+    const interval = setInterval(async () => {
+      try {
+        const res = await apiCall(`/api/enrollment/status/${jobId}`, "GET", null, token);
+        if (res && res.job) {
+          const j = res.job;
+          if (j.card_uid && !cardUid) {
+            setCardUid(j.card_uid);
+          }
+          if ((j.step === "CARD_TAPPED" || j.card_uid) && step === 3) {
+            setCardUid(j.card_uid || cardUid);
+            setTimeout(() => setStep(4), 900);
+          } else if (j.step === "FINGER_1" && fingerPass < 1) {
+            setFingerPass(1);
+          } else if ((j.step === "FINGER_2" || j.step === "SYNCING" || j.step === "COMPLETED") && step === 4) {
+            setFingerPass(2);
+            setTimeout(() => setStep(5), 900);
+          }
+        }
+      } catch(e) {}
+    }, 900);
+    return () => clearInterval(interval);
+  }, [isOpen, jobId, step, cardUid, fingerPass, token]);
+
+  // Animate sync step progress
+  useEffect(() => {
+    if (step === 5) {
+      setSyncProgress(15);
+      const t1 = setTimeout(() => setSyncProgress(55), 500);
+      const t2 = setTimeout(() => setSyncProgress(85), 1000);
+      const t3 = setTimeout(() => {
+        setSyncProgress(100);
+        // Ensure credentials committed on server
+        if (jobId) {
+          apiCall("/api/enrollment/step", "POST", { job_id: jobId, step: "COMPLETED", card_uid: cardUid }, token).catch(()=>{});
+        }
+      }, 1500);
+      return () => { clearTimeout(t1); clearTimeout(t2); clearTimeout(t3); };
+    }
+  }, [step, jobId, cardUid, token]);
+
   if (!isOpen) return null;
 
-  const submit = async (e) => {
+  // Step 1 -> Step 2
+  const goToDeviceSelection = (e) => {
     e.preventDefault();
-    if (!code || !name) { setErr("Code and Name are required"); return; }
+    if (!code.trim() || !name.trim()) {
+      setErr("Employee Code and Full Name are required");
+      return;
+    }
+    setErr("");
+    setStep(2);
+  };
+
+  // Step 2 -> Step 3 (Starts job on backend)
+  const startEnrollmentJob = async () => {
+    if (!isSelectedOnline) {
+      setErr(`Cannot proceed: Terminal '${selectedDev?.device_label || selectedDev?.device_key || "Reader"}' is offline. Please power on the HR terminal.`);
+      return;
+    }
     setLoading(true);
     setErr("");
     try {
-      await onSave({ code, name, dept, type, email, card, fp });
-      onClose();
+      const data = await apiCall(
+        "/api/enrollment/start",
+        "POST",
+        {
+          code: code.trim(),
+          name: name.trim(),
+          dept: dept.trim(),
+          type,
+          email: email.trim() || null,
+          device_id: selectedDeviceId || (devices[0]?.id || 1),
+        },
+        token
+      );
+      setJobId(data.job_id);
+      setFingerprintId(data.fingerprint_id);
+      setStep(3);
     } catch(err) {
-      setErr(err.message);
+      setErr(err.message || "Failed to start enrollment job");
     } finally {
       setLoading(false);
     }
   };
 
+
+  const handleFinish = () => {
+    if (onSaved) onSaved();
+    onClose();
+  };
+
+  const stepLabels = [
+    { num: 1, label: "Details" },
+    { num: 2, label: "Device" },
+    { num: 3, label: "NFC Tap" },
+    { num: 4, label: "Fingerprint" },
+    { num: 5, label: "Sync" },
+  ];
+
   return (
     <div className="modal-backdrop">
-      <div className="modal-box">
-        <div style={{display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:18}}>
-          <div style={{fontSize:16, fontWeight:700}}>Add New Employee</div>
+      <div className="modal-box modal-box-large" style={{maxWidth:560}}>
+        {/* Header with Title and Close */}
+        <div style={{display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:14}}>
+          <div style={{display:"flex", alignItems:"center", gap:8}}>
+            <div style={{width:28, height:28, borderRadius:7, background:"var(--primary-dim)", color:"var(--primary)", display:"flex", alignItems:"center", justifyContent:"center"}}>
+              <Icon name={step === 3 ? "nfc" : (step === 4 ? "fingerprint" : (step === 5 ? "check-circle" : "users"))} size={16}/>
+            </div>
+            <div>
+              <div style={{fontSize:16, fontWeight:700}}>Employee Registration & Onboarding</div>
+              <div style={{fontSize:11.5, color:"var(--text-dim)"}}>Identity & Biometric Credential Provisioning</div>
+            </div>
+          </div>
           <button onClick={onClose} style={{background:"none", border:"none", cursor:"pointer", color:"var(--text-dim)"}}><Icon name="x" size={18}/></button>
         </div>
-        {err && <div style={{color:"var(--rose)", fontSize:12.5, marginBottom:12}}>{err}</div>}
-        <form onSubmit={submit} style={{display:"flex", flexDirection:"column", gap:12}}>
-          <div>
-            <label style={{fontSize:12, color:"var(--text-dim)", display:"block", marginBottom:4}}>Employee Code</label>
-            <input required placeholder="EMP-007" value={code} onChange={e=>setCode(e.target.value)}
-              style={{width:"100%", padding:"8px 12px", borderRadius:8, border:"1px solid var(--border)", background:"var(--surface-2)", color:"var(--text)", fontSize:13.5}} />
+
+        {/* Multi-Step Stepper Progress Bar */}
+        <div style={{display:"flex", alignItems:"center", justifyContent:"space-between", margin:"16px 0 20px 0", position:"relative"}}>
+          <div style={{position:"absolute", top:14, left:24, right:24, height:2, background:"var(--border)", zIndex:0}} />
+          <div style={{position:"absolute", top:14, left:24, width:`${((step - 1) / 4) * 88}%`, height:2, background:"var(--teal)", transition:"width .3s ease", zIndex:1}} />
+          {stepLabels.map((s) => {
+            const isDone = s.num < step;
+            const isCurrent = s.num === step;
+            return (
+              <div key={s.num} style={{display:"flex", flexDirection:"column", alignItems:"center", gap:4, zIndex:2}}>
+                <div style={{
+                  width:28, height:28, borderRadius:99, display:"flex", alignItems:"center", justifyContent:"center",
+                  fontSize:12, fontWeight:700,
+                  background: isDone ? "var(--teal)" : (isCurrent ? "var(--primary)" : "var(--surface-2)"),
+                  color: isDone || isCurrent ? "#fff" : "var(--text-dim)",
+                  border: isCurrent ? "2px solid var(--primary)" : (isDone ? "none" : "1px solid var(--border)"),
+                  boxShadow: isCurrent ? "0 0 10px rgba(76,111,255,0.4)" : "none",
+                  transition:"all .2s ease"
+                }}>
+                  {isDone ? <Icon name="check" size={13}/> : s.num}
+                </div>
+                <span style={{fontSize:11, fontWeight: isCurrent ? 600 : 500, color: isCurrent ? "var(--text)" : "var(--text-faint)"}}>
+                  {s.label}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+
+        {err && (
+          <div style={{color:"var(--rose)", background:"var(--rose-bg)", border:"1px solid var(--rose)", padding:"8px 12px", borderRadius:8, fontSize:12.5, marginBottom:14}}>
+            {err}
           </div>
-          <div>
-            <label style={{fontSize:12, color:"var(--text-dim)", display:"block", marginBottom:4}}>Full Name</label>
-            <input required placeholder="John Doe" value={name} onChange={e=>setName(e.target.value)}
-              style={{width:"100%", padding:"8px 12px", borderRadius:8, border:"1px solid var(--border)", background:"var(--surface-2)", color:"var(--text)", fontSize:13.5}} />
-          </div>
-          <div style={{display:"grid", gridTemplateColumns:"1fr 1fr", gap:10}}>
+        )}
+
+        {/* STEP 1: Basic Details */}
+        {step === 1 && (
+          <form onSubmit={goToDeviceSelection} style={{display:"flex", flexDirection:"column", gap:12}}>
             <div>
-              <label style={{fontSize:12, color:"var(--text-dim)", display:"block", marginBottom:4}}>Department</label>
-              <input required value={dept} onChange={e=>setDept(e.target.value)}
-                style={{width:"100%", padding:"8px 12px", borderRadius:8, border:"1px solid var(--border)", background:"var(--surface-2)", color:"var(--text)", fontSize:13.5}} />
+              <label style={{fontSize:12, color:"var(--text-dim)", display:"block", marginBottom:4}}>Employee Code <span style={{color:"var(--rose)"}}>*</span></label>
+              <input required placeholder="EMP-0012" value={code} onChange={e=>setCode(e.target.value)}
+                style={{width:"100%", padding:"9px 12px", borderRadius:8, border:"1px solid var(--border)", background:"var(--surface-2)", color:"var(--text)", fontSize:13.5}} />
             </div>
             <div>
-              <label style={{fontSize:12, color:"var(--text-dim)", display:"block", marginBottom:4}}>Person Type</label>
-              <select value={type} onChange={e=>setType(e.target.value)}
-                style={{width:"100%", padding:"8px 12px", borderRadius:8, border:"1px solid var(--border)", background:"var(--surface-2)", color:"var(--text)", fontSize:13.5}}>
-                <option value="EMPLOYEE">Employee</option>
-                <option value="CONTRACTOR">Contractor</option>
-                <option value="VISITOR">Visitor</option>
-              </select>
+              <label style={{fontSize:12, color:"var(--text-dim)", display:"block", marginBottom:4}}>Full Name <span style={{color:"var(--rose)"}}>*</span></label>
+              <input required placeholder="Arvind Kumar" value={name} onChange={e=>setName(e.target.value)}
+                style={{width:"100%", padding:"9px 12px", borderRadius:8, border:"1px solid var(--border)", background:"var(--surface-2)", color:"var(--text)", fontSize:13.5}} />
             </div>
-          </div>
-          <div>
-            <label style={{fontSize:12, color:"var(--text-dim)", display:"block", marginBottom:4}}>Email (optional)</label>
-            <input type="email" placeholder="john@company.com" value={email} onChange={e=>setEmail(e.target.value)}
-              style={{width:"100%", padding:"8px 12px", borderRadius:8, border:"1px solid var(--border)", background:"var(--surface-2)", color:"var(--text)", fontSize:13.5}} />
-          </div>
-          <div style={{display:"grid", gridTemplateColumns:"1.4fr 1fr", gap:10}}>
+            <div style={{display:"grid", gridTemplateColumns:"1fr 1fr", gap:10}}>
+              <div>
+                <label style={{fontSize:12, color:"var(--text-dim)", display:"block", marginBottom:4}}>Department</label>
+                <select value={dept} onChange={e=>setDept(e.target.value)}
+                  style={{width:"100%", padding:"9px 12px", borderRadius:8, border:"1px solid var(--border)", background:"var(--surface-2)", color:"var(--text)", fontSize:13.5}}>
+                  {(departments.length > 0 ? departments : ["Engineering", "HR", "Sales", "Operations"]).map((d, i) => {
+                    const val = d.name || d;
+                    return <option key={i} value={val}>{val}</option>;
+                  })}
+                </select>
+              </div>
+              <div>
+                <label style={{fontSize:12, color:"var(--text-dim)", display:"block", marginBottom:4}}>Person Type</label>
+                <select value={type} onChange={e=>setType(e.target.value)}
+                  style={{width:"100%", padding:"9px 12px", borderRadius:8, border:"1px solid var(--border)", background:"var(--surface-2)", color:"var(--text)", fontSize:13.5}}>
+                  <option value="EMPLOYEE">Employee</option>
+                  <option value="CONTRACTOR">Contractor</option>
+                  <option value="VISITOR">Visitor</option>
+                </select>
+              </div>
+            </div>
             <div>
-              <label style={{fontSize:12, color:"var(--text-dim)", display:"block", marginBottom:4}}>RFID Card UID (hex)</label>
-              <input placeholder="04A2B7C1" value={card} onChange={e=>setCard(e.target.value.toUpperCase())}
-                style={{width:"100%", padding:"8px 12px", borderRadius:8, border:"1px solid var(--border)", background:"var(--surface-2)", color:"var(--text)", fontSize:13.5}} className="mono" />
+              <label style={{fontSize:12, color:"var(--text-dim)", display:"block", marginBottom:4}}>Email (optional)</label>
+              <input type="email" placeholder="arvind@company.com" value={email} onChange={e=>setEmail(e.target.value)}
+                style={{width:"100%", padding:"9px 12px", borderRadius:8, border:"1px solid var(--border)", background:"var(--surface-2)", color:"var(--text)", fontSize:13.5}} />
             </div>
-            <div>
-              <label style={{fontSize:12, color:"var(--text-dim)", display:"block", marginBottom:4}}>Fingerprint Slot</label>
-              <input type="number" placeholder="Slot #" value={fp} onChange={e=>setFp(e.target.value)}
-                style={{width:"100%", padding:"8px 12px", borderRadius:8, border:"1px solid var(--border)", background:"var(--surface-2)", color:"var(--text)", fontSize:13.5}} />
+
+            <div style={{background:"var(--surface-2)", border:"1px dashed var(--border)", borderRadius:8, padding:"10px 14px", marginTop:4}}>
+              <div style={{display:"flex", alignItems:"center", gap:8, fontSize:12, color:"var(--text-dim)"}}>
+                <Icon name="nfc" size={16}/>
+                <span>RFID UID & Fingerprint slot will be captured live from the HR terminal in the next steps.</span>
+              </div>
+            </div>
+
+            <div style={{display:"flex", justifyContent:"flex-end", gap:8, marginTop:12}}>
+              <Button variant="ghost" onClick={onClose}>Cancel</Button>
+              <Button variant="primary" type="submit">
+                Next <Icon name="arrow-right" size={14}/>
+              </Button>
+            </div>
+          </form>
+        )}
+
+        {/* STEP 2: Device Selection & Connection */}
+        {step === 2 && (
+          <div style={{display:"flex", flexDirection:"column", gap:14}}>
+            <div style={{fontSize:13, color:"var(--text-dim)"}}>
+              Select the designated enrollment terminal (ESP32) for credential provisioning:
+            </div>
+
+            <div style={{display:"flex", flexDirection:"column", gap:8, maxHeight:220, overflowY:"auto"}}>
+              {devices && devices.length > 0 ? (
+                devices.map((d) => {
+                  const isSelected = String(selectedDeviceId) === String(d.id);
+                  const isOnline = d.online === true;
+                  return (
+                    <div
+                      key={d.id}
+                      onClick={() => { setSelectedDeviceId(d.id); setErr(""); }}
+                      style={{
+                        display:"flex", justifyContent:"space-between", alignItems:"center",
+                        padding:"12px 16px", borderRadius:10, cursor:"pointer",
+                        border: isSelected ? (isOnline ? "2px solid var(--primary)" : "2px solid var(--rose)") : "1px solid var(--border)",
+                        background: isSelected ? (isOnline ? "var(--primary-dim)" : "var(--rose-bg)") : "var(--surface-2)",
+                        opacity: isOnline ? 1 : 0.65,
+                        transition:"all .15s ease"
+                      }}
+                    >
+                      <div style={{display:"flex", alignItems:"center", gap:12}}>
+                        <div style={{
+                          width:36, height:36, borderRadius:8,
+                          background: isSelected ? (isOnline ? "var(--primary)" : "var(--rose)") : "var(--surface)",
+                          color: isSelected ? "#fff" : (isOnline ? "var(--primary)" : "var(--rose)"),
+                          display:"flex", alignItems:"center", justifyContent:"center"
+                        }}>
+                          <Icon name="cpu" size={18}/>
+                        </div>
+                        <div>
+                          <div style={{fontWeight:600, fontSize:13.5, color:"var(--text)"}}>{d.device_label || d.device_key}</div>
+                          <div style={{fontSize:11.5, color:"var(--text-dim)"}}>
+                            <span className="mono">{d.device_key}</span> • {d.room_name || "Access Point"}
+                          </div>
+                        </div>
+                      </div>
+                      <div style={{display:"flex", alignItems:"center", gap:8}}>
+                        <span style={{
+                          display:"inline-flex", alignItems:"center", gap:5, fontSize:11, fontWeight:600,
+                          padding:"3px 8px", borderRadius:99,
+                          background: isOnline ? "var(--teal-bg)" : "var(--rose-bg)",
+                          color: isOnline ? "var(--teal)" : "var(--rose)"
+                        }}>
+                          <span style={{width:6, height:6, borderRadius:99, background: isOnline ? "var(--teal)" : "var(--rose)"}}/>
+                          {isOnline ? "Online" : "Offline"}
+                        </span>
+                        {isSelected && <Icon name="check" size={16}/>}
+                      </div>
+                    </div>
+                  );
+                })
+              ) : (
+                <div style={{padding:"24px 16px", textAlign:"center", color:"var(--text-dim)", fontSize:13, background:"var(--surface-2)", borderRadius:10}}>
+                  No hardware terminals detected. Please verify ESP32 network connection.
+                </div>
+              )}
+            </div>
+
+            {!isSelectedOnline && (
+              <div style={{
+                display:"flex", alignItems:"center", gap:8, fontSize:12.5,
+                color:"var(--rose)", background:"var(--rose-bg)", border:"1px solid var(--rose)",
+                padding:"9px 14px", borderRadius:8
+              }}>
+                <Icon name="x" size={15}/>
+                <span>Device is offline. Please power on the enrollment terminal or verify its network connection to proceed.</span>
+              </div>
+            )}
+
+            <div style={{display:"flex", justifyContent:"space-between", alignItems:"center", marginTop:10}}>
+              <Button variant="ghost" onClick={() => { setErr(""); setStep(1); }}>
+                <span style={{transform:"rotate(180deg)", display:"inline-flex"}}><Icon name="arrow-right" size={14}/></span> Back
+              </Button>
+              <Button variant="primary" onClick={startEnrollmentJob} disabled={loading || !isSelectedOnline}>
+                {loading ? <><Icon name="loader" size={14}/> Connecting...</> : <>Connect & Start Enrollment <Icon name="arrow-right" size={14}/></>}
+              </Button>
             </div>
           </div>
-          <div style={{display:"flex", justifyContent:"flex-end", gap:8, marginTop:10}}>
-            <Button variant="ghost" onClick={onClose}>Cancel</Button>
-            <Button variant="primary" type="submit" disabled={loading}>{loading ? "Saving..." : "Save Employee"}</Button>
+        )}
+
+        {/* STEP 3: NFC Card Tap */}
+        {step === 3 && (
+          <div style={{display:"flex", flexDirection:"column", alignItems:"center", gap:16, padding:"8px 0"}}>
+            <div style={{textAlign:"center"}}>
+              <div style={{fontSize:16, fontWeight:700}}>Tap Employee NFC Card</div>
+              <div style={{fontSize:12.5, color:"var(--text-dim)", marginTop:2}}>
+                Place the NFC smart card on the HR device reader
+              </div>
+            </div>
+
+            {/* Glowing NFC Card Visual */}
+            <div
+              className={cardUid ? "nfc-card-success" : "nfc-card-glow"}
+              style={{
+                width:260, height:160, borderRadius:16,
+                background: cardUid
+                  ? "linear-gradient(135deg, #0e2e2a 0%, #0f4f46 100%)"
+                  : "linear-gradient(135deg, #1e293b 0%, #0f172a 100%)",
+                border: cardUid ? "2px solid var(--teal)" : "2px solid var(--primary)",
+                padding:18, display:"flex", flexDirection:"column", justifyContent:"space-between",
+                position:"relative", overflow:"hidden", transition:"all .4s ease"
+              }}
+            >
+              <div style={{display:"flex", justifyContent:"space-between", alignItems:"center"}}>
+                <div style={{width:32, height:24, borderRadius:4, background:"#d97706", opacity:0.8}} />
+                <Icon name="nfc" size={26}/>
+              </div>
+
+              <div style={{textAlign:"center", margin:"10px 0"}}>
+                {cardUid ? (
+                  <div style={{display:"flex", flexDirection:"column", alignItems:"center", gap:4}}>
+                    <div style={{color:"var(--teal)", display:"flex", alignItems:"center", gap:6, fontWeight:700, fontSize:13}}>
+                      <Icon name="check-circle" size={16}/> CARD CAPTURED
+                    </div>
+                    <div className="mono" style={{fontSize:18, fontWeight:700, color:"#fff", letterSpacing:1}}>
+                      {cardUid}
+                    </div>
+                  </div>
+                ) : (
+                  <div style={{fontSize:13, fontWeight:600, color:"var(--text-dim)", letterSpacing:0.5}}>
+                    READY TO SCAN
+                  </div>
+                )}
+              </div>
+
+              <div style={{display:"flex", justifyContent:"space-between", alignItems:"center", fontSize:11, color:"var(--text-faint)"}}>
+                <span>{name || "EMPLOYEE"}</span>
+                <span className="mono">{code || "EMP-001"}</span>
+              </div>
+            </div>
+
+            {/* Status indicator */}
+            <div style={{
+              display:"inline-flex", alignItems:"center", gap:8, fontSize:12.5, fontWeight:600,
+              padding:"6px 14px", borderRadius:99,
+              background: cardUid ? "var(--teal-bg)" : "var(--primary-dim)",
+              color: cardUid ? "var(--teal)" : "var(--primary)"
+            }}>
+              {cardUid ? (
+                <><Icon name="check" size={14}/> NFC Card Registered: <span className="mono">{cardUid}</span></>
+              ) : (
+                <><span className="spin-slow" style={{display:"inline-flex"}}><Icon name="loader" size={14}/></span> Waiting for NFC Card Tap on terminal...</>
+              )}
+            </div>
+
+            {cardUid && (
+              <div style={{display:"flex", justifyContent:"center", marginTop:6}}>
+                <Button variant="primary" onClick={() => setStep(4)} style={{padding:"8px 16px", fontSize:13}}>
+                  Continue to Fingerprint <Icon name="arrow-right" size={13}/>
+                </Button>
+              </div>
+            )}
           </div>
-        </form>
+        )}
+
+        {/* STEP 4: Fingerprint Enrollment */}
+        {step === 4 && (
+          <div style={{display:"flex", flexDirection:"column", alignItems:"center", gap:16, padding:"8px 0"}}>
+            <div style={{textAlign:"center"}}>
+              <div style={{fontSize:16, fontWeight:700}}>Biometric Fingerprint Enrollment</div>
+              <div style={{fontSize:12.5, color:"var(--text-dim)", marginTop:2}}>
+                Place same finger on the optical sensor (2 verification passes)
+              </div>
+            </div>
+
+            {/* Biometric Scanner Visual */}
+            <div style={{
+              width:180, height:180, borderRadius:24,
+              background:"var(--surface-2)", border:"2px solid var(--border)",
+              display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center",
+              position:"relative", overflow:"hidden", boxShadow:"inset 0 0 20px rgba(0,0,0,0.4)"
+            }}>
+              <div style={{color: fingerPass === 2 ? "var(--teal)" : "var(--primary)", transition:"color .3s ease"}}>
+                <Icon name="fingerprint" size={84}/>
+              </div>
+              {fingerPass < 2 && <div className="scanner-beam" />}
+              <div style={{
+                position:"absolute", bottom:8, fontSize:10.5, fontWeight:600,
+                background:"rgba(0,0,0,0.5)", padding:"2px 8px", borderRadius:4, color:"var(--text-dim)"
+              }}>
+                Slot #{fingerprintId || 1}
+              </div>
+            </div>
+
+            {/* Pass 1 & Pass 2 Checklist */}
+            <div style={{display:"grid", gridTemplateColumns:"1fr 1fr", gap:10, width:"100%"}}>
+              <div style={{
+                background: fingerPass >= 1 ? "var(--teal-bg)" : "var(--surface-2)",
+                border: fingerPass >= 1 ? "1px solid var(--teal)" : "1px solid var(--border)",
+                padding:"10px 14px", borderRadius:10, display:"flex", alignItems:"center", gap:10
+              }}>
+                <div style={{
+                  width:24, height:24, borderRadius:99,
+                  background: fingerPass >= 1 ? "var(--teal)" : "var(--border)",
+                  color: fingerPass >= 1 ? "#fff" : "var(--text-dim)",
+                  display:"flex", alignItems:"center", justifyContent:"center"
+                }}>
+                  {fingerPass >= 1 ? <Icon name="check" size={13}/> : "1"}
+                </div>
+                <div>
+                  <div style={{fontSize:12, fontWeight:600, color: fingerPass >= 1 ? "var(--teal)" : "var(--text)"}}>Pass 1: Capture</div>
+                  <div style={{fontSize:10.5, color:"var(--text-dim)"}}>
+                    {fingerPass >= 1 ? "First image OK" : "Place finger"}
+                  </div>
+                </div>
+              </div>
+
+              <div style={{
+                background: fingerPass >= 2 ? "var(--teal-bg)" : "var(--surface-2)",
+                border: fingerPass >= 2 ? "1px solid var(--teal)" : "1px solid var(--border)",
+                padding:"10px 14px", borderRadius:10, display:"flex", alignItems:"center", gap:10
+              }}>
+                <div style={{
+                  width:24, height:24, borderRadius:99,
+                  background: fingerPass >= 2 ? "var(--teal)" : "var(--border)",
+                  color: fingerPass >= 2 ? "#fff" : "var(--text-dim)",
+                  display:"flex", alignItems:"center", justifyContent:"center"
+                }}>
+                  {fingerPass >= 2 ? <Icon name="check" size={13}/> : "2"}
+                </div>
+                <div>
+                  <div style={{fontSize:12, fontWeight:600, color: fingerPass >= 2 ? "var(--teal)" : "var(--text)"}}>Pass 2: Match & Store</div>
+                  <div style={{fontSize:10.5, color:"var(--text-dim)"}}>
+                    {fingerPass >= 2 ? "Template created" : "Place same finger"}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {fingerPass >= 2 && (
+              <div style={{display:"flex", justifyContent:"center", marginTop:6}}>
+                <Button variant="primary" onClick={() => setStep(5)} style={{padding:"8px 16px", fontSize:13}}>
+                  Continue to Device Sync <Icon name="arrow-right" size={13}/>
+                </Button>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* STEP 5: Synchronization & Completed */}
+        {step === 5 && (
+          <div style={{display:"flex", flexDirection:"column", alignItems:"center", gap:16, padding:"12px 0"}}>
+            {/* Animated Celebration Icon */}
+            <div style={{
+              width:64, height:64, borderRadius:99,
+              background: syncProgress === 100 ? "var(--teal-bg)" : "var(--primary-dim)",
+              color: syncProgress === 100 ? "var(--teal)" : "var(--primary)",
+              border: `2px solid ${syncProgress === 100 ? "var(--teal)" : "var(--primary)"}`,
+              display:"flex", alignItems:"center", justifyContent:"center",
+              boxShadow: syncProgress === 100 ? "0 0 24px rgba(45,212,191,0.4)" : "none",
+              transition:"all .4s ease"
+            }}>
+              {syncProgress === 100 ? <Icon name="check" size={32}/> : <Icon name="loader" size={28}/>}
+            </div>
+
+            <div style={{textAlign:"center"}}>
+              <div style={{fontSize:17, fontWeight:700}}>
+                {syncProgress === 100 ? "Synchronisation Done!" : "Synchronising with Active Devices..."}
+              </div>
+              <div style={{fontSize:12.5, color:"var(--text-dim)", marginTop:3}}>
+                {syncProgress === 100
+                  ? "Employee onboarding is complete and active across all access points."
+                  : "Broadcasting biometric credentials and access permissions..."}
+              </div>
+            </div>
+
+            {/* Sync Progress Bar */}
+            <div style={{width:"100%", background:"var(--surface-2)", height:8, borderRadius:99, overflow:"hidden"}}>
+              <div style={{
+                height:"100%", width:`${syncProgress}%`,
+                background:"linear-gradient(90deg, var(--primary), var(--teal))",
+                transition:"width .4s ease"
+              }} />
+            </div>
+
+            {/* Recap Card */}
+            <div style={{
+              width:"100%", background:"var(--surface-2)", border:"1px solid var(--border)",
+              borderRadius:10, padding:"14px 18px", display:"grid", gridTemplateColumns:"1fr 1fr", gap:10, fontSize:12.5
+            }}>
+              <div>
+                <span style={{color:"var(--text-dim)", display:"block", fontSize:11}}>EMPLOYEE</span>
+                <span style={{fontWeight:600}}>{code} — {name}</span>
+              </div>
+              <div>
+                <span style={{color:"var(--text-dim)", display:"block", fontSize:11}}>DEPARTMENT</span>
+                <span style={{fontWeight:600}}>{dept}</span>
+              </div>
+              <div>
+                <span style={{color:"var(--text-dim)", display:"block", fontSize:11}}>NFC CARD UID</span>
+                <span className="mono" style={{fontWeight:600, color:"var(--teal)"}}>{cardUid || "Assigned"}</span>
+              </div>
+              <div>
+                <span style={{color:"var(--text-dim)", display:"block", fontSize:11}}>FINGERPRINT SLOT</span>
+                <span className="mono" style={{fontWeight:600, color:"var(--primary)"}}>Slot #{fingerprintId || 1}</span>
+              </div>
+            </div>
+
+            <div style={{width:"100%", display:"flex", justifyContent:"flex-end", marginTop:8}}>
+              <Button
+                variant="primary"
+                onClick={handleFinish}
+                style={{width:"100%", justifyContent:"center", padding:"10px 18px", fontSize:14}}
+                disabled={syncProgress < 100}
+              >
+                <Icon name="check" size={16}/> Done & Close
+              </Button>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
 }
+
 
 function AddDeviceModal({isOpen, onClose, onSave, rooms}){
   const [key, setKey] = useState("");
@@ -1237,10 +2287,15 @@ function LoginPage({onLogin}){
 function Shell(){
   const [token, setToken] = useState(sessionStorage.getItem("token") || "");
   const [page, setPage] = useState("dashboard");
-  const [theme, setTheme] = useState("dark");
+  const [theme, setTheme] = useState(() => localStorage.getItem("theme") || "light");
   const [selectedEmp, setSelectedEmp] = useState(null);
   const [now, setNow] = useState(new Date());
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+
+  useEffect(() => {
+    document.documentElement.setAttribute("data-theme", theme);
+    try { localStorage.setItem("theme", theme); } catch (e) {}
+  }, [theme]);
 
   const [employees, setEmployees] = useState([]);
   const [attendance, setAttendance] = useState([]);
@@ -1327,24 +2382,128 @@ function Shell(){
     return Array.from(set);
   }, [departmentsList, employees]);
 
-  const handleAddEmployee = async (empData) => {
-    const person = await apiCall("/api/people", "POST", {
-      employee_code: (empData.code || "").trim(),
-      full_name: (empData.name || "").trim(),
-      department: (empData.dept || "").trim(),
-      person_type: empData.type || "EMPLOYEE",
-      email: (empData.email || "").trim() || null,
-    }, token);
 
-    if (empData.card && empData.card.trim() && person && person.id) {
-      await apiCall("/api/credentials", "POST", {
-        person_id: person.id,
-        card_uid: empData.card.trim().toUpperCase(),
-        fingerprint_slot: empData.fp && !isNaN(empData.fp) ? Number(empData.fp) : null,
-      }, token);
+  const handleAddEmployee = async (empData) => {
+    try {
+      const person = await apiCall(
+        "/api/people",
+        "POST",
+        {
+          employee_code: (empData.code || "").trim(),
+          full_name: (empData.name || "").trim(),
+          department: (empData.dept || "").trim(),
+          person_type: empData.type || "EMPLOYEE",
+          email: (empData.email || "").trim() || null,
+        },
+        token
+      );
+
+      if (!person || !person.id) {
+        throw new Error("Employee creation failed");
+      }
+
+      if ((empData.card && empData.card.trim()) || (empData.fp && !isNaN(empData.fp))) {
+        await apiCall(
+          "/api/credentials",
+          "POST",
+          {
+            person_id: person.id,
+            card_uid: (empData.card || "").trim().toUpperCase(),
+            fingerprint_slot: empData.fp && !isNaN(empData.fp) ? Number(empData.fp) : null,
+          },
+          token
+        );
+      }
+
+      await loadData();
+    } catch (err) {
+      console.error("Add employee failed:", err);
+      alert(err.message || "Failed to add employee");
     }
-    await loadData();
   };
+
+  const handleEnrollEmployee = async (employee, deviceId) => {
+  if (!employee || !employee.id) {
+    alert("Invalid employee");
+    return;
+  }
+
+  if (!deviceId) {
+    alert("Please select a target ESP32 device");
+    return;
+  }
+
+  try {
+    const result = await apiCall(
+      "/api/fingerprint-enrollment",
+      "POST",
+      {
+        person_id: Number(employee.id),
+        target_device_id: Number(deviceId),
+      },
+      token
+    );
+
+    if (!result) {
+      throw new Error("Failed to create enrollment job");
+    }
+
+    if (result.created === false && result.existing === true) {
+      alert(
+        `Enrollment job already exists.\n\n` +
+        `Job ID: ${result.job_id}\n` +
+        `Fingerprint ID: ${result.fingerprint_id}\n` +
+        `Target ESP32: ${result.target_esp32_id}`
+      );
+      return;
+    }
+
+    alert(
+      `Enrollment job created successfully!\n\n` +
+      `Job ID: ${result.job_id}\n` +
+      `Employee: ${result.full_name}\n` +
+      `Fingerprint ID: ${result.fingerprint_id}\n` +
+      `Target ESP32: ${result.target_esp32_id}`
+    );
+
+    await loadData();
+
+  } catch (err) {
+    console.error(
+      "Enrollment job creation failed:",
+      err
+    );
+
+    alert(
+      err.message ||
+      "Failed to create enrollment job"
+    );
+  }
+};
+ 
+  const handleDeleteEmployee = async (employee) => {
+  if (!employee || !employee.id) return;
+
+  const confirmed = window.confirm(
+    `Delete employee "${employee.name}"?`
+  );
+
+  if (!confirmed) return;
+
+  try {
+    await apiCall(
+      `/api/people/${employee.id}`,
+      "DELETE",
+      null,
+      token
+    );
+
+    await loadData();
+  } catch (err) {
+    console.error("Delete employee failed:", err);
+    alert(err.message || "Failed to delete employee");
+  }
+ };
 
   const handleDeactivate = async (emp) => {
     try {
@@ -1364,6 +2523,15 @@ function Shell(){
   const handleAddDevice = async (deviceData) => {
     await apiCall("/api/devices", "POST", deviceData, token);
     await loadData();
+  };
+
+  const handleUpdateDevicePurpose = async (deviceId, purpose) => {
+    try {
+      await apiCall("/api/devices/" + deviceId, "PUT", { purpose }, token);
+      await loadData();
+    } catch(err) {
+      alert("Failed to update device purpose: " + err.message);
+    }
   };
 
   const handleDeleteDevice = async (deviceId) => {
@@ -1516,6 +2684,7 @@ function Shell(){
               rooms={rooms}
               onAddDevice={handleAddDevice}
               onDeleteDevice={handleDeleteDevice}
+              onUpdatePurpose={handleUpdateDevicePurpose}
             />
           )}
           {page==="admin" && (
@@ -1542,7 +2711,10 @@ function Shell(){
       <AddEmployeeModal
         isOpen={isAddModalOpen}
         onClose={()=>setIsAddModalOpen(false)}
-        onSave={handleAddEmployee}
+        onSaved={loadData}
+        departments={departmentsList}
+        devices={devices}
+        token={token}
       />
     </div>
   );
