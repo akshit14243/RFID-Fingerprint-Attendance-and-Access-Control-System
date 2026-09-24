@@ -32,17 +32,22 @@ async function getNextFingerprintSlot() {
 }
 
 // ----------------------------------------------------
-// 1. API: Start Enrollment Wizard Job
+// 1. API: Start Enrollment Wizard Job (supports all endpoint aliases)
 // ----------------------------------------------------
-router.post("/api/enrollment/start", async (req, res, next) => {
+const handleStartEnrollment = async (req, res, next) => {
   try {
-    const { code, name, dept, type, email, device_id, person_id } = req.body || {};
+    const { code, name, dept, type, email, device_id, person_id, employee_code, full_name, department, target_device_id } = req.body || {};
+
+    const empCode = (code || employee_code || "").trim();
+    const empName = (name || full_name || "").trim();
+    const empDept = (dept || department || "Engineering").trim();
+    const targetDevId = Number(device_id || target_device_id) || null;
 
     let person = null;
     if (person_id) {
       person = await one("SELECT * FROM people WHERE id = $1", [person_id]);
     } else {
-      if (!code || !name) {
+      if (!empCode || !empName) {
         return res.status(400).json({ error: "bad_request", message: "Employee code and name are required" });
       }
       person = await one(
@@ -54,7 +59,7 @@ router.post("/api/enrollment/start", async (req, res, next) => {
                person_type = EXCLUDED.person_type,
                email = COALESCE(EXCLUDED.email, people.email)
          RETURNING *`,
-        [(code || "").trim(), (name || "").trim(), (dept || "Engineering").trim(), type || "EMPLOYEE", email ? email.trim() : null]
+        [empCode, empName, empDept, type || "EMPLOYEE", email ? email.trim() : null]
       );
     }
 
@@ -63,7 +68,7 @@ router.post("/api/enrollment/start", async (req, res, next) => {
     }
 
     // Resolve target device
-    let targetDeviceId = Number(device_id) || null;
+    let targetDeviceId = targetDevId;
     if (!targetDeviceId) {
       const defDev = await one(
         "SELECT id FROM devices WHERE is_active = TRUE ORDER BY (device_key ILIKE '%ESP32%' OR device_label ILIKE '%HR%') DESC, (last_seen_at IS NOT NULL) DESC, last_seen_at DESC, id ASC LIMIT 1"
@@ -145,14 +150,19 @@ router.post("/api/enrollment/start", async (req, res, next) => {
   } catch (err) {
     next(err);
   }
-});
+};
+
+router.post("/api/enrollment/start", handleStartEnrollment);
+router.post("/api/fingerprint/enrollment/create", handleStartEnrollment);
+router.post("/api/fingerprint-enrollment", handleStartEnrollment);
+router.post("/api/fingerprint/enrollment", handleStartEnrollment);
 
 // ----------------------------------------------------
 // 2. API: Get Enrollment Job Status
 // ----------------------------------------------------
-router.get("/api/enrollment/status/:id", async (req, res, next) => {
+const handleEnrollmentStatus = async (req, res, next) => {
   try {
-    const jobId = Number(req.params.id);
+    const jobId = Number(req.params.id || req.params.jobId);
     if (!jobId) return res.status(400).json({ error: "bad_request" });
 
     const job = await one(
@@ -170,11 +180,15 @@ router.get("/api/enrollment/status/:id", async (req, res, next) => {
       return res.status(404).json({ error: "not_found", message: "Job not found" });
     }
 
-    res.json({ success: true, job });
+    res.json({ success: true, job, ...job });
   } catch (err) {
     next(err);
   }
-});
+};
+
+router.get("/api/enrollment/status/:id", handleEnrollmentStatus);
+router.get("/api/fingerprint/enrollment/:id", handleEnrollmentStatus);
+router.get("/api/fingerprint-enrollment/:id", handleEnrollmentStatus);
 
 // ----------------------------------------------------
 // 3. API: Advance Step / Complete Job
@@ -408,6 +422,9 @@ async function handleEnrollmentReport(req, res, next) {
 router.post("/access_control/test_enrollment.php", handleEnrollmentReport);
 router.post("/access_control/access_control_test/test_enrollment.php", handleEnrollmentReport);
 router.post("/api/enrollment/complete", handleEnrollmentReport);
+router.post("/api/fingerprint/enrollment/:id/complete", handleEnrollmentReport);
+router.post("/api/fingerprint/enrollment/complete", handleEnrollmentReport);
+router.post("/api/fingerprint-enrollment/complete", handleEnrollmentReport);
 
 // ----------------------------------------------------
 // 8. Hardware Compatibility: Template Upload & Download
