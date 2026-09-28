@@ -1304,6 +1304,8 @@ function AddEmployeeModal({isOpen, onClose, onSaved, departments=[], devices=[],
   const [cardUid, setCardUid] = useState("");
   const [fingerPass, setFingerPass] = useState(0); // 0: none, 1: first pass, 2: second pass
   const [syncProgress, setSyncProgress] = useState(0);
+  const [syncDevices, setSyncDevices] = useState([]);
+  const [syncSummary, setSyncSummary] = useState({ total: 1, completed: 0, all_synced: false });
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState("");
 
@@ -1323,6 +1325,8 @@ function AddEmployeeModal({isOpen, onClose, onSaved, departments=[], devices=[],
       setCardUid("");
       setFingerPass(0);
       setSyncProgress(0);
+      setSyncDevices([]);
+      setSyncSummary({ total: 1, completed: 0, all_synced: false });
       setLoading(false);
       setErr("");
       setIsTimedOut(false);
@@ -1408,22 +1412,38 @@ function AddEmployeeModal({isOpen, onClose, onSaved, departments=[], devices=[],
     return () => clearInterval(timer);
   }, [isOpen, isTimedOut, loading, step, jobId, token]);
 
-  // Animate sync step progress
+  // Live DownChar multi-device sync in Step 5
   useEffect(() => {
-    if (step === 5) {
-      setSyncProgress(15);
-      const t1 = setTimeout(() => setSyncProgress(55), 500);
-      const t2 = setTimeout(() => setSyncProgress(85), 1000);
-      const t3 = setTimeout(() => {
-        setSyncProgress(100);
-        // Ensure credentials committed on server
-        if (jobId) {
-          apiCall("/api/enrollment/step", "POST", { job_id: jobId, step: "COMPLETED", card_uid: cardUid }, token).catch(()=>{});
+    if (!isOpen || step !== 5 || !jobId) return;
+
+    // Trigger generation of DownChar sync jobs for other devices
+    apiCall(`/api/enrollment/${jobId}/sync-devices`, "POST", {}, token).catch(() => {});
+
+    // Ensure credentials committed on server
+    apiCall("/api/enrollment/step", "POST", { job_id: jobId, step: "COMPLETED", card_uid: cardUid }, token).catch(() => {});
+
+    const pollSync = async () => {
+      try {
+        const res = await apiCall(`/api/enrollment/${jobId}/sync-devices`, "GET", null, token);
+        if (res && res.devices) {
+          setSyncDevices(res.devices);
+          setSyncSummary({
+            total: res.total_devices || 1,
+            completed: res.completed_devices || 0,
+            all_synced: res.all_synced || false,
+          });
+          const pct = res.all_synced
+            ? 100
+            : Math.min(95, Math.max(35, Math.round(((res.completed_devices || 1) / Math.max(res.total_devices || 1, 1)) * 100)));
+          setSyncProgress(pct);
         }
-      }, 1500);
-      return () => { clearTimeout(t1); clearTimeout(t2); clearTimeout(t3); };
-    }
-  }, [step, jobId, cardUid, token]);
+      } catch (e) {}
+    };
+
+    pollSync();
+    const interval = setInterval(pollSync, 1200);
+    return () => clearInterval(interval);
+  }, [isOpen, step, jobId, cardUid, token]);
 
   if (!isOpen) return null;
 
@@ -1972,33 +1992,33 @@ function AddEmployeeModal({isOpen, onClose, onSaved, departments=[], devices=[],
 
         {/* STEP 5: Synchronization & Completed */}
         {step === 5 && (
-          <div style={{display:"flex", flexDirection:"column", alignItems:"center", gap:16, padding:"12px 0"}}>
-            {/* Animated Celebration Icon */}
+          <div style={{display:"flex", flexDirection:"column", alignItems:"center", gap:14, padding:"8px 0"}}>
+            {/* Animated Celebration / Sync Icon */}
             <div style={{
-              width:64, height:64, borderRadius:99,
-              background: syncProgress === 100 ? "var(--teal-bg)" : "var(--primary-dim)",
-              color: syncProgress === 100 ? "var(--teal)" : "var(--primary)",
-              border: `2px solid ${syncProgress === 100 ? "var(--teal)" : "var(--primary)"}`,
+              width:58, height:58, borderRadius:99,
+              background: syncSummary.all_synced ? "var(--teal-bg)" : "var(--primary-dim)",
+              color: syncSummary.all_synced ? "var(--teal)" : "var(--primary)",
+              border: `2px solid ${syncSummary.all_synced ? "var(--teal)" : "var(--primary)"}`,
               display:"flex", alignItems:"center", justifyContent:"center",
-              boxShadow: syncProgress === 100 ? "0 0 24px rgba(45,212,191,0.4)" : "none",
+              boxShadow: syncSummary.all_synced ? "0 0 20px rgba(45,212,191,0.4)" : "none",
               transition:"all .4s ease"
             }}>
-              {syncProgress === 100 ? <Icon name="check" size={32}/> : <Icon name="loader" size={28}/>}
+              {syncSummary.all_synced ? <Icon name="check" size={28}/> : <Icon name="loader" size={26}/>}
             </div>
 
             <div style={{textAlign:"center"}}>
-              <div style={{fontSize:17, fontWeight:700}}>
-                {syncProgress === 100 ? "Synchronisation Done!" : "Synchronising with Active Devices..."}
+              <div style={{fontSize:16.5, fontWeight:700}}>
+                {syncSummary.all_synced ? "Hardware Biometric Synchronization Done!" : "Synchronizing Multi-Terminal Biometrics..."}
               </div>
-              <div style={{fontSize:12.5, color:"var(--text-dim)", marginTop:3}}>
-                {syncProgress === 100
-                  ? "Employee onboarding is complete and active across all access points."
-                  : "Broadcasting biometric credentials and access permissions..."}
+              <div style={{fontSize:12, color:"var(--text-dim)", marginTop:2}}>
+                {syncSummary.all_synced
+                  ? "Biometric template and access credentials active across all access points."
+                  : "Provisioning DownChar biometrics to all connected access terminals in facility..."}
               </div>
             </div>
 
             {/* Sync Progress Bar */}
-            <div style={{width:"100%", background:"var(--surface-2)", height:8, borderRadius:99, overflow:"hidden"}}>
+            <div style={{width:"100%", background:"var(--surface-2)", height:7, borderRadius:99, overflow:"hidden"}}>
               <div style={{
                 height:"100%", width:`${syncProgress}%`,
                 background:"linear-gradient(90deg, var(--primary), var(--teal))",
@@ -2006,37 +2026,108 @@ function AddEmployeeModal({isOpen, onClose, onSaved, departments=[], devices=[],
               }} />
             </div>
 
+            {/* DownChar Terminal Provisioning Checklist */}
+            <div style={{
+              width:"100%", background:"var(--surface-2)", border:"1px solid var(--border)",
+              borderRadius:10, padding:"12px 14px"
+            }}>
+              <div style={{display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:8}}>
+                <div style={{display:"flex", alignItems:"center", gap:6, fontSize:12, fontWeight:700, color:"var(--text)"}}>
+                  <Icon name="cpu" size={14}/>
+                  <span>Hardware DownChar Sync Distribution</span>
+                </div>
+                <span style={{
+                  fontSize:11, fontWeight:600,
+                  color: syncSummary.all_synced ? "var(--teal)" : "var(--primary)",
+                  background: syncSummary.all_synced ? "var(--teal-bg)" : "var(--primary-dim)",
+                  padding:"2px 8px", borderRadius:99
+                }}>
+                  {syncSummary.completed} of {syncSummary.total} Terminals Provisioned
+                </span>
+              </div>
+
+              <div style={{display:"flex", flexDirection:"column", gap:6, maxHeight:150, overflowY:"auto"}}>
+                {syncDevices && syncDevices.length > 0 ? (
+                  syncDevices.map((d) => {
+                    const isDone = d.sync_status === "COMPLETED";
+                    const isRunning = d.sync_status === "RUNNING";
+                    const isFailed = d.sync_status === "FAILED";
+                    return (
+                      <div
+                        key={d.device_id}
+                        style={{
+                          display:"flex", justifyContent:"space-between", alignItems:"center",
+                          padding:"8px 10px", borderRadius:6, background:"var(--surface)", border:"1px solid var(--border)",
+                          fontSize:12
+                        }}
+                      >
+                        <div style={{display:"flex", alignItems:"center", gap:8}}>
+                          <span style={{
+                            width:7, height:7, borderRadius:99,
+                            background: isDone ? "var(--teal)" : (isRunning ? "var(--primary)" : (isFailed ? "var(--rose)" : (d.is_online ? "var(--amber)" : "var(--text-dim)")))
+                          }}/>
+                          <div>
+                            <span style={{fontWeight:600}}>{d.device_label || d.device_key}</span>
+                            <span style={{color:"var(--text-dim)", fontSize:11, marginLeft:6}} className="mono">({d.device_key})</span>
+                            {d.is_master && (
+                              <span style={{marginLeft:6, fontSize:10, padding:"1px 6px", borderRadius:4, background:"var(--primary-dim)", color:"var(--primary)", fontWeight:600}}>
+                                Source
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                        <div style={{display:"flex", alignItems:"center", gap:6}}>
+                          <span style={{
+                            fontSize:11, fontWeight:600,
+                            color: isDone ? "var(--teal)" : (isRunning ? "var(--primary)" : (isFailed ? "var(--rose)" : "var(--text-dim)"))
+                          }}>
+                            {d.status_text}
+                          </span>
+                          {isDone && <Icon name="check" size={13} style={{color:"var(--teal)"}}/>}
+                          {isRunning && <span className="spin-slow" style={{display:"inline-flex"}}><Icon name="loader" size={13} style={{color:"var(--primary)"}}/></span>}
+                        </div>
+                      </div>
+                    );
+                  })
+                ) : (
+                  <div style={{padding:"8px", textAlign:"center", fontSize:11.5, color:"var(--text-dim)"}}>
+                    Preparing DownChar distribution queue...
+                  </div>
+                )}
+              </div>
+            </div>
+
             {/* Recap Card */}
             <div style={{
               width:"100%", background:"var(--surface-2)", border:"1px solid var(--border)",
-              borderRadius:10, padding:"14px 18px", display:"grid", gridTemplateColumns:"1fr 1fr", gap:10, fontSize:12.5
+              borderRadius:10, padding:"12px 16px", display:"grid", gridTemplateColumns:"1fr 1fr", gap:8, fontSize:12
             }}>
               <div>
-                <span style={{color:"var(--text-dim)", display:"block", fontSize:11}}>EMPLOYEE</span>
+                <span style={{color:"var(--text-dim)", display:"block", fontSize:10.5}}>EMPLOYEE</span>
                 <span style={{fontWeight:600}}>{code} — {name}</span>
               </div>
               <div>
-                <span style={{color:"var(--text-dim)", display:"block", fontSize:11}}>DEPARTMENT</span>
+                <span style={{color:"var(--text-dim)", display:"block", fontSize:10.5}}>DEPARTMENT</span>
                 <span style={{fontWeight:600}}>{dept}</span>
               </div>
               <div>
-                <span style={{color:"var(--text-dim)", display:"block", fontSize:11}}>NFC CARD UID</span>
+                <span style={{color:"var(--text-dim)", display:"block", fontSize:10.5}}>NFC CARD UID</span>
                 <span className="mono" style={{fontWeight:600, color:"var(--teal)"}}>{cardUid || "Assigned"}</span>
               </div>
               <div>
-                <span style={{color:"var(--text-dim)", display:"block", fontSize:11}}>FINGERPRINT SLOT</span>
+                <span style={{color:"var(--text-dim)", display:"block", fontSize:10.5}}>FINGERPRINT SLOT</span>
                 <span className="mono" style={{fontWeight:600, color:"var(--primary)"}}>Slot #{fingerprintId || 1}</span>
               </div>
             </div>
 
-            <div style={{width:"100%", display:"flex", justifyContent:"flex-end", marginTop:8}}>
+            <div style={{width:"100%", display:"flex", justifyContent:"flex-end", marginTop:4}}>
               <Button
                 variant="primary"
                 onClick={handleFinish}
-                style={{width:"100%", justifyContent:"center", padding:"10px 18px", fontSize:14}}
-                disabled={syncProgress < 100}
+                style={{width:"100%", justifyContent:"center", padding:"9px 18px", fontSize:13.5}}
+                disabled={syncProgress < 30}
               >
-                <Icon name="check" size={16}/> Done & Close
+                <Icon name="check" size={15}/> Done & Close
               </Button>
             </div>
           </div>

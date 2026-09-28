@@ -32,7 +32,101 @@ async function getNextFingerprintSlot() {
 }
 
 // ----------------------------------------------------
-// 1. API: Start Enrollment Wizard Job (supports all endpoint aliases)
+// DownChar: Create multi-terminal sync jobs & commands
+// ----------------------------------------------------
+async function createDowncharSyncJobs(masterJobId) {
+  if (!masterJobId) return [];
+
+  const masterJob = await one(
+    `SELECT j.*, p.employee_code, p.full_name, p.department
+       FROM fingerprint_enrollment_jobs j
+       JOIN people p ON p.id = j.person_id
+      WHERE j.id = $1`,
+    [masterJobId]
+  );
+  if (!masterJob || !masterJob.person_id) return [];
+
+  // Find all other active devices in the facility
+  const otherDevices = await query(
+    `SELECT * FROM devices
+      WHERE is_active = TRUE
+        AND id != $1
+      ORDER BY id ASC`,
+    [masterJob.target_device_id || 0]
+  );
+
+  const createdJobs = [];
+
+  for (const dev of otherDevices) {
+    // Check if this device already has an active or completed downchar job for this person & slot
+    const existing = await one(
+      `SELECT id, status, step FROM fingerprint_enrollment_jobs
+        WHERE person_id = $1
+          AND target_device_id = $2
+          AND fingerprint_id = $3
+          AND status IN ('REQUESTED', 'RUNNING', 'COMPLETED')`,
+      [masterJob.person_id, dev.id, masterJob.fingerprint_id]
+    );
+
+    if (existing) {
+      createdJobs.push(existing);
+      continue;
+    }
+
+    // Cancel any previous failed or stale commands/jobs for this device & person
+    await query(
+      `UPDATE fingerprint_enrollment_jobs
+          SET status = 'CANCELLED', updated_at = now()
+        WHERE person_id = $1 AND target_device_id = $2 AND status IN ('REQUESTED', 'RUNNING')`,
+      [masterJob.person_id, dev.id]
+    );
+
+    await query(
+      `UPDATE device_commands
+          SET status = 'CANCELLED'
+        WHERE user_id = $1 AND esp32_id = $2 AND status = 'PENDING'`,
+      [masterJob.person_id, dev.device_key]
+    );
+
+    // Create downchar sub-job
+    const subJob = await one(
+      `INSERT INTO fingerprint_enrollment_jobs
+         (person_id, target_device_id, fingerprint_id, card_uid, template_path, step, status)
+       VALUES
+         ($1, $2, $3, $4, $5, 'DOWNCHAR_PENDING', 'REQUESTED')
+       RETURNING *`,
+      [
+        masterJob.person_id,
+        dev.id,
+        masterJob.fingerprint_id,
+        masterJob.card_uid,
+        masterJob.template_path,
+      ]
+    );
+
+    // Create device command for this device (ENROLL_DOWNLOAD command for test_4.ino)
+    await query(
+      `INSERT INTO device_commands
+         (job_id, esp32_id, command, user_id, fingerprint_id, status)
+       VALUES
+         ($1, $2, 'ENROLL_DOWNLOAD', $3, $4, 'PENDING')`,
+      [subJob.id, dev.device_key, masterJob.person_id, masterJob.fingerprint_id]
+    );
+
+    createdJobs.push(subJob);
+  }
+
+  broadcast("device_sync_update", {
+    master_job_id: masterJobId,
+    person_id: masterJob.person_id,
+    created_downchar_jobs: createdJobs.length,
+  });
+
+  return createdJobs;
+}
+
+// ----------------------------------------------------
+// 1. API: Start Enrollment Wizard Job
 // ----------------------------------------------------
 const handleStartEnrollment = async (req, res, next) => {
   try {
@@ -116,7 +210,7 @@ const handleStartEnrollment = async (req, res, next) => {
       [person.id, esp32Key]
     );
 
-    // Create job
+    // Create master job
     const job = await one(
       `INSERT INTO fingerprint_enrollment_jobs
          (person_id, target_device_id, fingerprint_id, step, status)
@@ -126,12 +220,12 @@ const handleStartEnrollment = async (req, res, next) => {
       [person.id, targetDeviceId, nextSlot]
     );
 
-    // Create device command
+    // Create device command: ENROLL_UPLOAD aligns directly with test_4.ino firmware
     await query(
       `INSERT INTO device_commands
          (job_id, esp32_id, command, user_id, fingerprint_id, status)
        VALUES
-         ($1, $2, 'ENTER_ENROLLMENT', $3, $4, 'PENDING')`,
+         ($1, $2, 'ENROLL_UPLOAD', $3, $4, 'PENDING')`,
       [job.id, esp32Key, person.id, nextSlot]
     );
 
@@ -187,8 +281,9 @@ const handleEnrollmentStatus = async (req, res, next) => {
       return res.status(404).json({ error: "not_found", message: "Job not found" });
     }
 
-    // Auto-expire stale jobs: if active job has had no update for > 35 seconds
-    if (["REQUESTED", "RUNNING"].includes(job.status)) {
+    // Auto-expire stale master jobs: if active job has had no update for > 35 seconds
+    // (excluding downchar pending jobs which wait for remote devices to poll)
+    if (["REQUESTED", "RUNNING"].includes(job.status) && !String(job.step).startsWith("DOWNCHAR")) {
       const updatedAt = new Date(job.updated_at).getTime();
       const now = Date.now();
       if (now - updatedAt > 35000) {
@@ -257,7 +352,7 @@ async function advanceEnrollmentStep(jobId, step, cardUid = null, errorMsg = nul
     await query("UPDATE device_commands SET status = $1 WHERE job_id = $2 AND status = 'PENDING'", [status, jobId]);
   }
 
-  // If completed, commit to database credentials & access rules
+  // If completed or syncing, commit credentials & access rules
   if (step === "COMPLETED" || step === "SYNCING") {
     if (validCard) {
       const existingCred = await one("SELECT id FROM credentials WHERE person_id = $1", [job.person_id]);
@@ -293,6 +388,13 @@ async function advanceEnrollmentStep(jobId, step, cardUid = null, errorMsg = nul
         );
       }
     }
+
+    // Automatically trigger DownChar sync job creation for other devices
+    try {
+      await createDowncharSyncJobs(jobId);
+    } catch (e) {
+      console.error("DownChar sync creation failed in advanceEnrollmentStep:", e);
+    }
   }
 
   const updated = await one(
@@ -324,20 +426,77 @@ async function advanceEnrollmentStep(jobId, step, cardUid = null, errorMsg = nul
   return payload;
 }
 
-router.post("/api/enrollment/step", async (req, res, next) => {
+const handleStepAdvance = async (req, res, next) => {
   try {
     const { job_id, step, card_uid, error_message } = req.body || {};
-    if (!job_id || !step) {
+    const jid = Number(job_id || req.params.id || 0);
+    if (!jid || !step) {
       return res.status(400).json({ error: "bad_request", message: "job_id and step are required" });
     }
-    const result = await advanceEnrollmentStep(Number(job_id), step, card_uid, error_message);
+    const result = await advanceEnrollmentStep(jid, step, card_uid, error_message);
     if (!result) return res.status(404).json({ error: "not_found", message: "Job not found" });
     res.json({ success: true, ...result });
   } catch (err) {
     next(err);
   }
-});
+};
 
+router.post("/api/enrollment/step", handleStepAdvance);
+router.post("/api/fingerprint/enrollment/step", handleStepAdvance);
+router.post("/api/fingerprint/enrollment/:id/step", handleStepAdvance);
+
+// ----------------------------------------------------
+// 4. API: Hardware NFC Card Registration (test_4.ino: sendNFCToServer)
+// ----------------------------------------------------
+const handleNfcEnrollment = async (req, res, next) => {
+  try {
+    const jobId = Number(req.params.id || req.params.jobId || req.body?.job_id || 0);
+    const { device_key, nfc_uid } = req.body || {};
+
+    if (!jobId) {
+      return res.status(400).json({ success: false, message: "Missing job_id" });
+    }
+
+    const cleanCard = cleanUid(nfc_uid);
+    if (!cleanCard) {
+      return res.status(400).json({ success: false, message: "Invalid nfc_uid" });
+    }
+
+    const job = await one("SELECT * FROM fingerprint_enrollment_jobs WHERE id = $1", [jobId]);
+    if (!job) {
+      return res.status(404).json({ success: false, message: "Job not found" });
+    }
+
+    const updated = await one(
+      `UPDATE fingerprint_enrollment_jobs
+          SET card_uid = $1, step = 'CARD_TAPPED', status = 'RUNNING', updated_at = now()
+        WHERE id = $2
+        RETURNING *`,
+      [cleanCard, jobId]
+    );
+
+    broadcast("enrollment_update", {
+      job_id: updated.id,
+      person_id: updated.person_id,
+      card_uid: updated.card_uid,
+      fingerprint_id: updated.fingerprint_id,
+      step: "CARD_TAPPED",
+      status: "RUNNING",
+    });
+
+    res.json({
+      success: true,
+      message: "NFC card registered successfully",
+      job_id: jobId,
+      fingerprint_id: updated.fingerprint_id,
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+router.post("/api/fingerprint/enrollment/:id/nfc", handleNfcEnrollment);
+router.post("/api/enrollment/:id/nfc", handleNfcEnrollment);
 
 // ----------------------------------------------------
 // 5. API: Cancel enrollment
@@ -358,95 +517,232 @@ router.post("/api/enrollment/cancel", async (req, res, next) => {
 });
 
 // ----------------------------------------------------
-// 6. Hardware Compatibility: Poll Pending Enrollment
-// (Handles /access_control/test_enrollment.php and /api/fingerprint-enrollment)
+// 6. Hardware Command Polling (test_4.ino: checkServerCommand)
 // ----------------------------------------------------
-async function handleEnrollmentPoll(req, res, next) {
+const handleDeviceCommand = async (req, res, next) => {
   try {
-    const esp32Id = String(req.query.esp32_id || req.query.device_key || "").trim();
+    const esp32Key = String(
+      req.params.deviceKey || req.params.esp32_id || req.query.esp32_id || req.query.device_key || ""
+    ).trim();
 
-    // Auto-expire stale pending jobs (> 35s) so hardware never picks up dead sessions
+    if (!esp32Key) {
+      return res.json({ success: true, command_available: false, command: "NORMAL" });
+    }
+
+    // Keep device last_seen_at fresh!
+    await query(
+      "UPDATE devices SET last_seen_at = now() WHERE device_key = $1 OR device_label ILIKE '%' || $1 || '%'",
+      [esp32Key]
+    );
+
+    // Auto-expire stale commands/jobs (> 60s without update, except downchar jobs waiting for poll)
     await query(
       `UPDATE fingerprint_enrollment_jobs
           SET status = 'TIMEOUT', step = 'TIMEOUT',
-              error_message = 'Hardware enrollment timed out.',
+              error_message = 'Enrollment command timed out.',
               updated_at = now()
         WHERE status IN ('REQUESTED', 'RUNNING')
-          AND updated_at < now() - interval '35 seconds'`
+          AND updated_at < now() - interval '60 seconds'
+          AND step NOT LIKE 'DOWNCHAR%'`
     );
 
-    let targetDev = null;
-    if (esp32Id) {
-      targetDev = await one(
-        "SELECT * FROM devices WHERE device_key = $1 OR device_label ILIKE '%' || $1 || '%'",
-        [esp32Id]
-      );
-    }
-
-    const whereDev = targetDev
-      ? `AND (j.target_device_id = ${targetDev.id} OR j.target_device_id IS NULL OR j.target_device_id = 1)`
-      : "";
-
-    const job = await one(
-      `SELECT j.*,
-              p.employee_code, p.full_name,
-              d.device_key, d.device_label
-         FROM fingerprint_enrollment_jobs j
-         JOIN people p ON p.id = j.person_id
-         LEFT JOIN devices d ON d.id = j.target_device_id
-        WHERE j.status IN ('REQUESTED', 'RUNNING')
-          ${whereDev}
-        ORDER BY j.id ASC
-        LIMIT 1`
+    // Find pending command for this device
+    const cmd = await one(
+      `SELECT c.*, j.person_id, j.fingerprint_id, j.status AS job_status
+         FROM device_commands c
+         JOIN fingerprint_enrollment_jobs j ON j.id = c.job_id
+        WHERE (c.esp32_id = $1 OR (c.esp32_id = 'ESP32_01' AND $1 = 'ESP32_01'))
+          AND c.status = 'PENDING'
+          AND j.status IN ('REQUESTED', 'RUNNING')
+        ORDER BY c.command_id ASC
+        LIMIT 1`,
+      [esp32Key]
     );
 
-    if (!job) {
+    if (!cmd) {
       return res.json({
         success: true,
-        enrollment_available: false,
-        message: "No enrollment job available",
+        command_available: false,
+        command: "NORMAL",
       });
+    }
+
+    // Normalize command name for test_4.ino
+    let commandName = cmd.command;
+    if (commandName === "ENTER_ENROLLMENT") {
+      commandName = "ENROLL_UPLOAD";
     }
 
     res.json({
       success: true,
-      enrollment_available: true,
-      job_id: job.id,
-      source_esp32: esp32Id || job.device_key || "ESP32_01",
-      target_esp32: esp32Id || job.device_key || "ESP32_01",
-      user_id: job.person_id,
-      employee_id: job.employee_code,
-      full_name: job.full_name,
-      fingerprint_id: job.fingerprint_id,
-      card_uid: job.card_uid,
-      step: job.step,
-      status: job.status,
+      command_available: true,
+      command_id: cmd.command_id,
+      job_id: cmd.job_id,
+      esp32_id: cmd.esp32_id,
+      user_id: cmd.user_id || cmd.person_id,
+      person_id: cmd.user_id || cmd.person_id,
+      fingerprint_id: cmd.fingerprint_id,
+      command: commandName,
+      created_at: cmd.created_at,
     });
   } catch (err) {
     next(err);
   }
-}
+};
 
-router.get("/access_control/test_enrollment.php", handleEnrollmentPoll);
-router.get("/access_control/access_control_test/test_enrollment.php", handleEnrollmentPoll);
-router.get("/api/fingerprint-enrollment", handleEnrollmentPoll);
+router.get("/api/device/:deviceKey/command", handleDeviceCommand);
+router.get("/api/device/:esp32_id/command", handleDeviceCommand);
+router.get("/access_control/get_command.php", handleDeviceCommand);
 
 // ----------------------------------------------------
-// 7. Hardware Compatibility: Report Enrollment Result / Progress
-// (POST /access_control/test_enrollment.php)
+// 7. Hardware Template Upload (test_4.ino: uploadTemplateToServer)
+// ----------------------------------------------------
+const handleTemplateUpload = async (req, res, next) => {
+  try {
+    const jobId = Number(
+      req.headers["x-job-id"] || req.query.job_id || req.params.id || req.body?.job_id || 0
+    );
+    const personId = Number(req.headers["x-person-id"] || req.query.person_id || 0);
+    const fpId = Number(req.headers["x-fingerprint-id"] || req.query.fingerprint_id || 0);
+    const deviceKey = String(req.headers["x-device-key"] || req.query.device_key || "").trim();
+
+    const raw = req.body;
+    if (!raw || raw.length === 0) {
+      return res.status(400).json({ success: false, message: "Empty template payload" });
+    }
+
+    if (!jobId) {
+      return res.status(400).json({ success: false, message: "Missing job_id or X-Job-ID header" });
+    }
+
+    const fileName = `job_${jobId}.bin`;
+    const filePath = path.join(TEMPLATES_DIR, fileName);
+    fs.writeFileSync(filePath, raw);
+
+    const relPath = `templates/${fileName}`;
+
+    await query(
+      `UPDATE fingerprint_enrollment_jobs
+          SET template_path = $1, step = 'FINGER_2', updated_at = now()
+        WHERE id = $2`,
+      [relPath, jobId]
+    );
+
+    // Automatically create DownChar sync jobs for all other active terminals in the facility
+    try {
+      await createDowncharSyncJobs(jobId);
+    } catch (syncErr) {
+      console.error("Downchar sync generation error on upload:", syncErr);
+    }
+
+    broadcast("enrollment_update", {
+      job_id: jobId,
+      step: "FINGER_2",
+      status: "RUNNING",
+      template_uploaded: true,
+      template_size: raw.length,
+    });
+
+    res.json({
+      success: true,
+      message: "Template uploaded and sync jobs provisioned",
+      job_id: jobId,
+      template_size: raw.length,
+      template_path: relPath,
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+router.post(
+  "/api/fingerprint/template/upload",
+  express.raw({ type: "*/*", limit: "2mb" }),
+  handleTemplateUpload
+);
+router.post(
+  "/access_control/upload_template.php",
+  express.raw({ type: "*/*", limit: "2mb" }),
+  handleTemplateUpload
+);
+
+// ----------------------------------------------------
+// 8. Hardware Template Download (test_4.ino: downloadTemplateFromServer)
+// ----------------------------------------------------
+const handleTemplateDownload = async (req, res, next) => {
+  try {
+    const jobId = Number(req.params.id || req.params.jobId || req.query.job_id || 0);
+    if (!jobId) return res.status(400).send("Invalid job_id");
+
+    const job = await one("SELECT * FROM fingerprint_enrollment_jobs WHERE id = $1", [jobId]);
+    if (!job) return res.status(404).send("Job not found");
+
+    let templateRelPath = job.template_path;
+    if (!templateRelPath) {
+      // If this is a downchar subjob, check for master template from person_id
+      const masterJob = await one(
+        `SELECT template_path FROM fingerprint_enrollment_jobs
+          WHERE person_id = $1 AND template_path IS NOT NULL
+          ORDER BY id DESC LIMIT 1`,
+        [job.person_id]
+      );
+      if (masterJob) templateRelPath = masterJob.template_path;
+    }
+
+    if (!templateRelPath) {
+      const defaultPath = path.join(TEMPLATES_DIR, `job_${jobId}.bin`);
+      if (fs.existsSync(defaultPath)) templateRelPath = `templates/job_${jobId}.bin`;
+    }
+
+    if (!templateRelPath) {
+      return res.status(404).send("Template not found");
+    }
+
+    const fullPath = path.isAbsolute(templateRelPath)
+      ? templateRelPath
+      : path.join(__dirname, "..", templateRelPath);
+
+    if (!fs.existsSync(fullPath)) {
+      return res.status(404).send("Template file missing on disk");
+    }
+
+    // Mark job as in-progress downloading/downchar syncing
+    await query(
+      "UPDATE fingerprint_enrollment_jobs SET step = 'DOWNCHAR_SYNCING', status = 'RUNNING', updated_at = now() WHERE id = $1",
+      [jobId]
+    );
+    broadcast("enrollment_update", { job_id: jobId, step: "DOWNCHAR_SYNCING", status: "RUNNING" });
+
+    const data = fs.readFileSync(fullPath);
+    res.setHeader("Content-Type", "application/octet-stream");
+    res.setHeader("Content-Length", data.length);
+    res.send(data);
+  } catch (err) {
+    next(err);
+  }
+};
+
+router.get("/api/fingerprint/template/:id", handleTemplateDownload);
+router.get("/api/fingerprint/template/download/:id", handleTemplateDownload);
+router.get("/access_control/download_template.php", handleTemplateDownload);
+
+// ----------------------------------------------------
+// 9. Hardware Enrollment Complete / Fail Reporting
+// (test_4.ino: markJobComplete and markJobFailed)
 // ----------------------------------------------------
 async function handleEnrollmentReport(req, res, next) {
   try {
     const data = req.body || {};
-    const jobId = Number(data.job_id || req.query.job_id || 0);
-    const esp32Id = data.esp32_id || req.query.esp32_id || "";
+    const jobId = Number(req.params.id || req.params.jobId || data.job_id || req.query.job_id || 0);
+    const esp32Id = data.device_key || data.esp32_id || req.query.esp32_id || "";
     const cardUid = data.card_uid || req.query.card_uid || null;
-    const fpId = Number(data.fingerprint_id || req.query.fingerprint_id || 0);
-    const step = data.step || (data.success ? "COMPLETED" : "FAILED");
-    const isSuccess = data.success === undefined ? true : Boolean(data.success);
+
+    const isFailRoute = req.path.endsWith("/fail") || req.url.includes("/fail");
     const isTimeout =
-      String(data.status || data.step || data.message || "").toUpperCase().includes("TIMEOUT") ||
+      String(data.status || data.step || data.message || data.reason || "").toUpperCase().includes("TIMEOUT") ||
       String(req.query.status || req.query.step || req.query.message || "").toUpperCase().includes("TIMEOUT");
+
+    const isSuccess = !isFailRoute && !isTimeout && (data.success === undefined ? true : Boolean(data.success));
 
     if (!jobId) {
       return res.status(400).json({ success: false, message: "Missing required job_id" });
@@ -454,15 +750,29 @@ async function handleEnrollmentReport(req, res, next) {
 
     if (!isSuccess || isTimeout) {
       const finalStep = isTimeout ? "TIMEOUT" : "FAILED";
-      const errMsg = data.message || (isTimeout ? "Hardware enrollment timed out. Terminal returned to standby state." : "Hardware enrollment reported failure");
+      const errMsg =
+        data.reason ||
+        data.message ||
+        (isTimeout ? "Hardware enrollment timed out. Terminal returned to standby state." : "Hardware enrollment reported failure");
       await advanceEnrollmentStep(jobId, finalStep, null, errMsg);
+      await query("UPDATE device_commands SET status = $1, completed_at = now() WHERE job_id = $2", [finalStep, jobId]);
       return res.json({ success: true, message: `Enrollment marked as ${finalStep}`, job_id: jobId, status: finalStep });
     }
 
-    const result = await advanceEnrollmentStep(jobId, step, cardUid);
+    // Success path
+    const result = await advanceEnrollmentStep(jobId, "COMPLETED", cardUid);
+    await query("UPDATE device_commands SET status = 'COMPLETED', completed_at = now() WHERE job_id = $1", [jobId]);
+
+    // Ensure DownChar sync jobs are ready for all active terminals
+    try {
+      await createDowncharSyncJobs(jobId);
+    } catch (e) {
+      console.error("DownChar sync creation failed in handleEnrollmentReport:", e);
+    }
+
     res.json({
       success: true,
-      message: "Enrollment updated successfully",
+      message: "Enrollment completed successfully",
       job_id: jobId,
       user_id: result.person_id,
       esp32_id: esp32Id,
@@ -476,125 +786,147 @@ async function handleEnrollmentReport(req, res, next) {
   }
 }
 
-router.post("/access_control/test_enrollment.php", handleEnrollmentReport);
-router.post("/access_control/access_control_test/test_enrollment.php", handleEnrollmentReport);
+router.post("/api/fingerprint/enrollment/:id/complete", handleEnrollmentReport);
+router.post("/api/fingerprint/enrollment/:id/fail", handleEnrollmentReport);
+router.post("/api/fingerprint/enrollment/complete", handleEnrollmentReport);
+router.post("/api/fingerprint/enrollment/fail", handleEnrollmentReport);
+router.post("/api/enrollment/:id/complete", handleEnrollmentReport);
+router.post("/api/enrollment/:id/fail", handleEnrollmentReport);
 router.post("/api/enrollment/complete", handleEnrollmentReport);
 router.post("/api/enrollment/fail", handleEnrollmentReport);
 router.post("/api/enrollment/timeout", handleEnrollmentReport);
-router.post("/api/fingerprint/enrollment/:id/complete", handleEnrollmentReport);
-router.post("/api/fingerprint/enrollment/complete", handleEnrollmentReport);
-router.post("/api/fingerprint-enrollment/complete", handleEnrollmentReport);
+router.post("/access_control/test_enrollment.php", handleEnrollmentReport);
+router.post("/access_control/access_control_test/test_enrollment.php", handleEnrollmentReport);
+router.post("/access_control/update_transfer_status.php", handleEnrollmentReport);
 
 // ----------------------------------------------------
-// 8. Hardware Compatibility: Template Upload & Download
+// 10. Step 5 Multi-Device DownChar Sync Status & Trigger
 // ----------------------------------------------------
-router.post(
-  "/access_control/upload_template.php",
-  express.raw({ type: "*/*", limit: "1mb" }),
-  async (req, res, next) => {
-    try {
-      const jobId = Number(req.query.job_id || 0);
-      if (!jobId) return res.status(400).json({ success: false, message: "Invalid job_id" });
-
-      const raw = req.body;
-      if (!raw || raw.length === 0) {
-        return res.status(400).json({ success: false, message: "Empty template payload" });
-      }
-
-      const filePath = path.join(TEMPLATES_DIR, `job_${jobId}.bin`);
-      fs.writeFileSync(filePath, raw);
-
-      const relPath = `templates/job_${jobId}.bin`;
-      await query(
-        "UPDATE fingerprint_enrollment_jobs SET template_path = $1, step = 'FINGER_2', updated_at = now() WHERE id = $2",
-        [relPath, jobId]
-      );
-
-      broadcast("enrollment_update", { job_id: jobId, step: "FINGER_2", template_uploaded: true });
-
-      res.json({
-        success: true,
-        message: "Template uploaded",
-        job_id: jobId,
-        template_size: raw.length,
-        template_path: relPath,
-      });
-    } catch (err) {
-      next(err);
-    }
-  }
-);
-
-router.get("/access_control/download_template.php", async (req, res, next) => {
+router.get("/api/enrollment/:id/sync-devices", async (req, res, next) => {
   try {
-    const jobId = Number(req.query.job_id || 0);
-    if (!jobId) return res.status(400).send("Invalid job_id");
+    const masterJobId = Number(req.params.id);
+    const masterJob = await one(
+      `SELECT j.*, p.employee_code, p.full_name, p.department
+         FROM fingerprint_enrollment_jobs j
+         JOIN people p ON p.id = j.person_id
+        WHERE j.id = $1`,
+      [masterJobId]
+    );
+    if (!masterJob) return res.status(404).json({ error: "not_found", message: "Job not found" });
 
-    const job = await one("SELECT template_path FROM fingerprint_enrollment_jobs WHERE id = $1", [jobId]);
-    if (!job || !job.template_path) return res.status(404).send("Template not uploaded");
-
-    const fullPath = path.join(__dirname, "..", job.template_path);
-    if (!fs.existsSync(fullPath)) return res.status(404).send("Template file not found");
-
-    const data = fs.readFileSync(fullPath);
-    res.setHeader("Content-Type", "application/octet-stream");
-    res.setHeader("Content-Length", data.length);
-    res.send(data);
-  } catch (err) {
-    next(err);
-  }
-});
-
-// ----------------------------------------------------
-// 9. Hardware Compatibility: Update Transfer Status & Commands
-// ----------------------------------------------------
-router.post("/access_control/update_transfer_status.php", async (req, res, next) => {
-  try {
-    const { job_id, status, message } = req.body || {};
-    const jid = Number(job_id);
-    if (!jid) return res.status(400).json({ success: false, message: "Missing job_id" });
-
-    if (status === "TRANSFER_SUCCESS") {
-      await advanceEnrollmentStep(jid, "COMPLETED");
-    }
-
-    res.json({ success: true, job_id: jid, status, message: message || "OK" });
-  } catch (err) {
-    next(err);
-  }
-});
-
-router.get("/access_control/get_command.php", async (req, res, next) => {
-  try {
-    const esp32Id = String(req.query.esp32_id || "").trim();
-    if (!esp32Id) return res.json({ success: false, message: "esp32_id required" });
-
-    const cmd = await one(
-      `SELECT * FROM device_commands
-        WHERE (esp32_id = $1 OR esp32_id = 'ESP32_01') AND status = 'PENDING'
-        ORDER BY command_id ASC LIMIT 1`,
-      [esp32Id]
+    // Fetch all active devices
+    const allDevices = await query(
+      `SELECT d.*, (d.last_seen_at IS NOT NULL AND d.last_seen_at > now() - interval '5 minutes') AS is_online
+         FROM devices d
+        WHERE d.is_active = TRUE
+        ORDER BY (d.id = $1) DESC, d.id ASC`,
+      [masterJob.target_device_id || 0]
     );
 
-    if (!cmd) {
-      return res.json({ success: true, command_available: false, message: "No pending command" });
+    // Fetch all downchar sub-jobs for this person & fingerprint_id
+    const downcharJobs = await query(
+      `SELECT j.*, c.command_id, c.status AS command_status, c.command
+         FROM fingerprint_enrollment_jobs j
+         LEFT JOIN device_commands c ON c.job_id = j.id
+        WHERE j.person_id = $1 AND j.fingerprint_id = $2`,
+      [masterJob.person_id, masterJob.fingerprint_id]
+    );
+
+    const downcharByDevId = {};
+    for (const dj of downcharJobs) {
+      if (dj.target_device_id) {
+        downcharByDevId[dj.target_device_id] = dj;
+      }
     }
+
+    const deviceList = allDevices.map((dev) => {
+      const isMaster = (dev.id === masterJob.target_device_id);
+      if (isMaster) {
+        const isMasterDone =
+          masterJob.status === "COMPLETED" ||
+          masterJob.step === "COMPLETED" ||
+          masterJob.step === "SYNCING" ||
+          masterJob.step === "FINGER_2";
+        return {
+          device_id: dev.id,
+          device_key: dev.device_key,
+          device_label: dev.device_label,
+          is_online: dev.is_online,
+          is_master: true,
+          role: "Source Terminal",
+          sync_status: isMasterDone ? "COMPLETED" : masterJob.status,
+          step: masterJob.step,
+          status_text: isMasterDone ? "Biometrics Uploaded & Saved" : "In Progress",
+        };
+      }
+
+      const dj = downcharByDevId[dev.id];
+      let syncStatus = "PENDING";
+      let statusText = "Queued (Waiting for poll)";
+
+      if (dj) {
+        if (dj.status === "COMPLETED" || dj.step === "COMPLETED") {
+          syncStatus = "COMPLETED";
+          statusText = "Synced (DownChar stored)";
+        } else if (dj.status === "FAILED" || dj.step === "FAILED") {
+          syncStatus = "FAILED";
+          statusText = `Failed: ${dj.error_message || "Transfer error"}`;
+        } else if (dj.status === "RUNNING" || dj.step === "DOWNCHAR_SYNCING") {
+          syncStatus = "RUNNING";
+          statusText = "Transferring DownChar to sensor...";
+        } else {
+          syncStatus = "QUEUED";
+          statusText = dev.is_online ? "Queued (Ready to DownChar)" : "Queued (Offline - syncs when booted)";
+        }
+      } else {
+        syncStatus = "QUEUED";
+        statusText = "Queuing sync...";
+      }
+
+      return {
+        device_id: dev.id,
+        device_key: dev.device_key,
+        device_label: dev.device_label,
+        is_online: dev.is_online,
+        is_master: false,
+        role: "Target Terminal",
+        sync_status: syncStatus,
+        sub_job_id: dj?.id || null,
+        status_text: statusText,
+      };
+    });
+
+    const totalCount = deviceList.length;
+    const completedCount = deviceList.filter((d) => d.sync_status === "COMPLETED").length;
 
     res.json({
       success: true,
-      command_available: true,
-      command_id: cmd.command_id,
-      job_id: cmd.job_id,
-      esp32_id: cmd.esp32_id,
-      command: cmd.command,
-      user_id: cmd.user_id,
-      fingerprint_id: cmd.fingerprint_id,
-      status: cmd.status,
-      created_at: cmd.created_at,
+      master_job_id: masterJobId,
+      person_id: masterJob.person_id,
+      fingerprint_id: masterJob.fingerprint_id,
+      total_devices: totalCount,
+      completed_devices: completedCount,
+      all_synced: (completedCount === totalCount),
+      devices: deviceList,
     });
   } catch (err) {
     next(err);
   }
 });
+
+router.post("/api/enrollment/:id/sync-devices", async (req, res, next) => {
+  try {
+    const masterJobId = Number(req.params.id);
+    const created = await createDowncharSyncJobs(masterJobId);
+    res.json({ success: true, count: created.length });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Backward compatibility poll handler
+router.get("/access_control/test_enrollment.php", handleDeviceCommand);
+router.get("/access_control/access_control_test/test_enrollment.php", handleDeviceCommand);
+router.get("/api/fingerprint-enrollment", handleDeviceCommand);
 
 module.exports = router;
