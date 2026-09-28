@@ -111,6 +111,10 @@ function Icon({name, size=18}){
     case "x": return <svg {...p}><path d="M18 6L6 18M6 6l12 12"/></svg>;
     case "logout": return <svg {...p}><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5"/><path d="M21 12H9"/></svg>;
     case "chevron": return <svg {...p}><path d="M9 18l6-6-6-6"/></svg>;
+    case "chevron-left": return <svg {...p}><path d="M15 18l-6-6 6-6"/></svg>;
+    case "chevron-right": return <svg {...p}><path d="M9 18l6-6-6-6"/></svg>;
+    case "chevrons-left": return <svg {...p}><path d="M11 17l-5-5 5-5M18 17l-5-5 5-5"/></svg>;
+    case "chevrons-right": return <svg {...p}><path d="M13 17l5-5-5-5M6 17l5-5-5-5"/></svg>;
     case "trash": return <svg {...p}><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>;
     case "nfc": return <svg {...p}><rect x="3" y="4" width="18" height="16" rx="3"/><path d="M7 10a5 5 0 0 1 7.1 0M9.5 12.5a1.5 1.5 0 0 1 2.1 0"/><circle cx="17" cy="15" r="1"/></svg>;
     case "fingerprint": return <svg {...p}><path d="M12 10a2 2 0 0 0-2 2c0 1.02-.1 2.51-.26 4"/><path d="M14 13.12c0 2.38 0 6.38-1 8.88"/><path d="M2 16h.01"/><path d="M21.8 16c.2-2 .131-5.354 0-6"/><path d="M9 6.8a6 6 0 0 1 9 5.2c0 .47 0 1.17-.02 2"/><path d="M5.5 10a8 8 0 0 1 13 0"/><path d="M2 12a10 10 0 0 1 20 0"/><path d="M12 2v2"/></svg>;
@@ -220,13 +224,32 @@ async function apiCall(path, method="GET", body=null, token="") {
   return data;
 }
 
+function getPaginationItems(current, total) {
+  if (total <= 7) {
+    return Array.from({ length: total }, (_, i) => i + 1);
+  }
+  if (current <= 4) {
+    return [1, 2, 3, 4, 5, "...", total];
+  }
+  if (current >= total - 3) {
+    return [1, "...", total - 4, total - 3, total - 2, total - 1, total];
+  }
+  return [1, "...", current - 1, current, current + 1, "...", total];
+}
+
 function DashboardPage({
   employees,
   attendance,
-  activity,
+  activity = [],
+  activityTotal = 0,
+  activityPage = 1,
+  activityStats = null,
+  onPageChange,
+  onRefreshActivity,
+  isLogsLoading = false,
   occupancy,
   dateStr
- }) {
+}) {
   const formatTime = (value) => {
     if (!value) return "--";
     const d = new Date(value);
@@ -321,17 +344,31 @@ function DashboardPage({
     return "DENIED";
   };
 
-  const recentLogs = Array.isArray(activity)
-    ? activity.slice(0, 30)
-    : [];
+  const [jumpPage, setJumpPage] = useState("");
 
-  const grantedCount = recentLogs.filter(
-    ev => getDecision(ev) === "GRANTED"
-  ).length;
+  const recentLogs = Array.isArray(activity) ? activity : [];
+  const totalEvents = activityTotal != null ? Number(activityTotal) : recentLogs.length;
+  const totalPages = Math.max(1, Math.ceil(totalEvents / 30));
+  const currentPage = Math.min(Math.max(1, Number(activityPage) || 1), totalPages);
 
-  const deniedCount = recentLogs.filter(
-    ev => getDecision(ev) === "DENIED"
-  ).length;
+  const grantedCount = activityStats?.granted != null
+    ? activityStats.granted
+    : recentLogs.filter(ev => getDecision(ev) === "GRANTED").length;
+
+  const deniedCount = activityStats?.denied != null
+    ? activityStats.denied
+    : recentLogs.filter(ev => getDecision(ev) === "DENIED").length;
+
+  const pageItems = getPaginationItems(currentPage, totalPages);
+
+  const handleJump = (e) => {
+    e.preventDefault();
+    const p = parseInt(jumpPage, 10);
+    if (!isNaN(p) && p >= 1 && p <= totalPages) {
+      if (onPageChange) onPageChange(p);
+      setJumpPage("");
+    }
+  };
 
   return (
     <div style={{display:"flex", flexDirection:"column", gap:18}}>
@@ -443,19 +480,29 @@ function DashboardPage({
       }}>
 
         <div style={{
-          padding:"15px 18px",
+          padding:"14px 18px",
           borderBottom:"1px solid var(--border)",
           display:"flex",
           justifyContent:"space-between",
-          alignItems:"center"
+          alignItems:"center",
+          flexWrap:"wrap",
+          gap:10
         }}>
 
           <div>
             <div style={{
               fontSize:15,
-              fontWeight:700
+              fontWeight:700,
+              display:"flex",
+              alignItems:"center",
+              gap:8
             }}>
               Recent Access Logs
+              {isLogsLoading && (
+                <span style={{ fontSize:12, color:"var(--primary)", display:"inline-flex", alignItems:"center", gap:4 }}>
+                  <Icon name="loader" size={13}/> Loading page {currentPage}...
+                </span>
+              )}
             </div>
 
             <div style={{
@@ -463,15 +510,46 @@ function DashboardPage({
               color:"var(--text-faint)",
               marginTop:3
             }}>
-              Live access activity from connected ESP32 devices
+              30 records per page
             </div>
           </div>
 
           <div style={{
-            fontSize:11,
-            color:"var(--text-faint)"
+            display:"flex",
+            alignItems:"center",
+            gap:10
           }}>
-            Showing {recentLogs.length} events
+            <div style={{
+              fontSize:12,
+              color:"var(--text-dim)",
+              background:"var(--surface-2)",
+              padding:"4px 10px",
+              borderRadius:6,
+              border:"1px solid var(--border)"
+            }}>
+              Total: <strong style={{color:"var(--text)"}}>{totalEvents.toLocaleString()}</strong> records • Page <strong>{currentPage}</strong> of <strong>{totalPages}</strong>
+            </div>
+
+            {onRefreshActivity && (
+              <button
+                type="button"
+                onClick={onRefreshActivity}
+                title="Refresh Activity Logs"
+                style={{
+                  background:"var(--surface-2)",
+                  border:"1px solid var(--border)",
+                  borderRadius:6,
+                  padding:"5px 9px",
+                  cursor:"pointer",
+                  color:"var(--text)",
+                  display:"flex",
+                  alignItems:"center",
+                  justifyContent:"center"
+                }}
+              >
+                <Icon name="refresh" size={13}/>
+              </button>
+            )}
           </div>
 
         </div>
@@ -490,7 +568,7 @@ function DashboardPage({
 
         ) : (
 
-          <div style={{overflowX:"auto"}}>
+          <div style={{overflowX:"auto", opacity: isLogsLoading ? 0.6 : 1, transition:"opacity 0.15s ease"}}>
 
             <table style={{
               width:"100%",
@@ -727,6 +805,194 @@ function DashboardPage({
 
           </div>
 
+        )}
+
+        {/* Pagination Bar */}
+        {totalEvents > 0 && (
+          <div style={{
+            padding:"12px 18px",
+            borderTop:"1px solid var(--border)",
+            background:"var(--surface)",
+            display:"flex",
+            justifyContent:"space-between",
+            alignItems:"center",
+            flexWrap:"wrap",
+            gap:12
+          }}>
+            <div style={{ fontSize:12.5, color:"var(--text-dim)" }}>
+              Showing <strong style={{ color:"var(--text)" }}>{totalEvents === 0 ? 0 : (currentPage - 1) * 30 + 1}</strong> to{" "}
+              <strong style={{ color:"var(--text)" }}>{Math.min(currentPage * 30, totalEvents)}</strong> of{" "}
+              <strong style={{ color:"var(--text)" }}>{totalEvents.toLocaleString()}</strong> records
+              {totalPages > 1 && (
+                <span style={{ marginLeft:8, color:"var(--text-faint)" }}>
+                  (Page {currentPage} of {totalPages})
+                </span>
+              )}
+            </div>
+
+            <div style={{ display:"flex", alignItems:"center", gap:6, flexWrap:"wrap" }}>
+              {/* First page button */}
+              {totalPages > 5 && (
+                <button
+                  type="button"
+                  onClick={() => onPageChange && onPageChange(1)}
+                  disabled={currentPage === 1 || isLogsLoading}
+                  title="First Page"
+                  style={{
+                    padding:"5px 8px",
+                    fontSize:12,
+                    borderRadius:6,
+                    border:"1px solid var(--border)",
+                    background:"var(--surface-2)",
+                    color: currentPage === 1 ? "var(--text-faint)" : "var(--text)",
+                    cursor: currentPage === 1 ? "not-allowed" : "pointer",
+                    opacity: currentPage === 1 ? 0.4 : 1,
+                    display:"inline-flex",
+                    alignItems:"center"
+                  }}
+                >
+                  <Icon name="chevrons-left" size={13}/>
+                </button>
+              )}
+
+              {/* Prev button */}
+              <button
+                type="button"
+                onClick={() => onPageChange && onPageChange(Math.max(1, currentPage - 1))}
+                disabled={currentPage === 1 || isLogsLoading}
+                style={{
+                  display:"inline-flex",
+                  alignItems:"center",
+                  gap:4,
+                  padding:"5px 10px",
+                  fontSize:12,
+                  fontWeight:600,
+                  borderRadius:6,
+                  border:"1px solid var(--border)",
+                  background:"var(--surface-2)",
+                  color: currentPage === 1 ? "var(--text-faint)" : "var(--text)",
+                  cursor: currentPage === 1 ? "not-allowed" : "pointer",
+                  opacity: currentPage === 1 ? 0.4 : 1
+                }}
+              >
+                <Icon name="chevron-left" size={13}/> Prev
+              </button>
+
+              {/* Page pills */}
+              {pageItems.map((p, idx) => {
+                if (p === "...") {
+                  return (
+                    <span
+                      key={`dots-${idx}`}
+                      style={{ padding:"0 6px", color:"var(--text-faint)", fontSize:13, userSelect:"none" }}
+                    >
+                      ...
+                    </span>
+                  );
+                }
+                const isActive = p === currentPage;
+                return (
+                  <button
+                    key={p}
+                    type="button"
+                    onClick={() => onPageChange && onPageChange(p)}
+                    disabled={isLogsLoading}
+                    style={{
+                      minWidth:30,
+                      height:28,
+                      padding:"0 7px",
+                      fontSize:12,
+                      fontWeight: isActive ? 700 : 500,
+                      borderRadius:6,
+                      border: isActive ? "1px solid var(--primary)" : "1px solid var(--border)",
+                      background: isActive ? "var(--primary)" : "var(--surface-2)",
+                      color: isActive ? "#ffffff" : "var(--text)",
+                      cursor:"pointer",
+                      transition:"all 0.15s ease"
+                    }}
+                  >
+                    {p}
+                  </button>
+                );
+              })}
+
+              {/* Next button */}
+              <button
+                type="button"
+                onClick={() => onPageChange && onPageChange(Math.min(totalPages, currentPage + 1))}
+                disabled={currentPage === totalPages || isLogsLoading}
+                style={{
+                  display:"inline-flex",
+                  alignItems:"center",
+                  gap:4,
+                  padding:"5px 10px",
+                  fontSize:12,
+                  fontWeight:600,
+                  borderRadius:6,
+                  border:"1px solid var(--border)",
+                  background:"var(--surface-2)",
+                  color: currentPage === totalPages ? "var(--text-faint)" : "var(--text)",
+                  cursor: currentPage === totalPages ? "not-allowed" : "pointer",
+                  opacity: currentPage === totalPages ? 0.4 : 1
+                }}
+              >
+                Next <Icon name="chevron-right" size={13}/>
+              </button>
+
+              {/* Last page button */}
+              {totalPages > 5 && (
+                <button
+                  type="button"
+                  onClick={() => onPageChange && onPageChange(totalPages)}
+                  disabled={currentPage === totalPages || isLogsLoading}
+                  title="Last Page"
+                  style={{
+                    padding:"5px 8px",
+                    fontSize:12,
+                    borderRadius:6,
+                    border:"1px solid var(--border)",
+                    background:"var(--surface-2)",
+                    color: currentPage === totalPages ? "var(--text-faint)" : "var(--text)",
+                    cursor: currentPage === totalPages ? "not-allowed" : "pointer",
+                    opacity: currentPage === totalPages ? 0.4 : 1,
+                    display:"inline-flex",
+                    alignItems:"center"
+                  }}
+                >
+                  <Icon name="chevrons-right" size={13}/>
+                </button>
+              )}
+
+              {/* Jump to page form */}
+              {totalPages > 5 && (
+                <form
+                  onSubmit={handleJump}
+                  style={{ display:"inline-flex", alignItems:"center", gap:4, marginLeft:6 }}
+                >
+                  <span style={{ fontSize:11.5, color:"var(--text-faint)" }}>Go:</span>
+                  <input
+                    type="number"
+                    min="1"
+                    max={totalPages}
+                    value={jumpPage}
+                    onChange={e => setJumpPage(e.target.value)}
+                    placeholder="#"
+                    style={{
+                      width:42,
+                      height:28,
+                      padding:"0 4px",
+                      borderRadius:6,
+                      border:"1px solid var(--border)",
+                      background:"var(--surface-2)",
+                      color:"var(--text)",
+                      fontSize:11.5,
+                      textAlign:"center"
+                    }}
+                  />
+                </form>
+              )}
+            </div>
+          </div>
         )}
 
       </div>
@@ -1315,17 +1581,15 @@ function AdminPage({departments, employees, rules, shifts, holidays, rooms, onAd
                       <div><div style={{color:"var(--text-dim)"}}>End</div><div className="mono" style={{fontWeight:600}}>{s.end_time?.slice(0,5)}</div></div>
                       <div><div style={{color:"var(--text-dim)"}}>Grace</div><div className="mono" style={{fontWeight:600}}>{s.grace_minutes}m</div></div>
                     </div>
-                    {!s.is_default && (
-                      <div style={{display:"flex", justifyContent:"flex-end", marginTop:4}}>
-                        <button
-                          type="button"
-                          onClick={()=>onDeleteShift(s.id)}
-                          style={{background:"none", border:"none", cursor:"pointer", color:"var(--rose)", fontSize:12, fontWeight:600, display:"inline-flex", alignItems:"center", gap:4}}
-                        >
-                          <Icon name="trash" size={13}/> Delete
-                        </button>
-                      </div>
-                    )}
+                    <div style={{display:"flex", justifyContent:"flex-end", marginTop:4}}>
+                      <button
+                        type="button"
+                        onClick={()=>onDeleteShift(s.id)}
+                        style={{background:"none", border:"none", cursor:"pointer", color:"var(--rose)", fontSize:12, fontWeight:600, display:"inline-flex", alignItems:"center", gap:4}}
+                      >
+                        <Icon name="trash" size={13}/> Delete
+                      </button>
+                    </div>
                   </div>
                 ))
               )}
@@ -2860,6 +3124,10 @@ function Shell(){
   const [employees, setEmployees] = useState([]);
   const [attendance, setAttendance] = useState([]);
   const [activity, setActivity] = useState([]);
+  const [activityTotal, setActivityTotal] = useState(0);
+  const [activityPage, setActivityPage] = useState(1);
+  const [activityStats, setActivityStats] = useState({ granted: 0, denied: 0 });
+  const [isLogsLoading, setIsLogsLoading] = useState(false);
   const [devices, setDevices] = useState([]);
   const [occupancy, setOccupancy] = useState({ count: 0, people: [] });
   const [rules, setRules] = useState([]);
@@ -2880,7 +3148,7 @@ function Shell(){
       const [peopleRes, attRes, evRes, devRes, occRes, rulesRes, deptsRes, shiftsRes, holsRes, roomsRes] = await Promise.all([
         apiCall("/api/people", "GET", null, token).catch(() => ({ people: [] })),
         apiCall("/api/attendance?date=" + selectedDate, "GET", null, token).catch(() => ({ attendance: [] })),
-        apiCall("/api/events?limit=30", "GET", null, token).catch(() => ({ events: [] })),
+        apiCall(`/api/events?page=${activityPage}&limit=30`, "GET", null, token).catch(() => ({ events: [], total: 0 })),
         apiCall("/api/devices", "GET", null, token).catch(() => ({ devices: [] })),
         apiCall("/api/occupancy", "GET", null, token).catch(() => ({ count: 0, people: [] })),
         apiCall("/api/rules", "GET", null, token).catch(() => ({ rules: [] })),
@@ -2899,6 +3167,11 @@ function Shell(){
       setEmployees(Object.values(grouped));
       setAttendance(attRes.attendance || []);
       setActivity(evRes.events || []);
+      setActivityTotal(evRes.total != null ? evRes.total : (evRes.events ? evRes.events.length : 0));
+      setActivityStats({
+        granted: evRes.granted_count || 0,
+        denied: evRes.denied_count || 0
+      });
       setDevices(devRes.devices || []);
       setOccupancy(occRes || { count: 0, people: [] });
       setRules(rulesRes.rules || []);
@@ -2909,11 +3182,49 @@ function Shell(){
     } catch(err) {
       console.error("Data fetch error:", err);
     }
-  }, [token, selectedDate]);
+  }, [token, selectedDate, activityPage]);
 
   useEffect(() => {
     loadData();
   }, [loadData]);
+
+  const handleActivityPageChange = async (newPage) => {
+    if (newPage === activityPage && activity.length > 0) return;
+    setActivityPage(newPage);
+    setIsLogsLoading(true);
+    try {
+      const res = await apiCall(`/api/events?page=${newPage}&limit=30`, "GET", null, token);
+      if (res && res.events) {
+        setActivity(res.events);
+        if (res.total != null) setActivityTotal(res.total);
+        if (res.granted_count != null) {
+          setActivityStats({ granted: res.granted_count, denied: res.denied_count });
+        }
+      }
+    } catch (err) {
+      console.error("Failed to load page:", err);
+    } finally {
+      setIsLogsLoading(false);
+    }
+  };
+
+  const handleRefreshActivity = async () => {
+    setIsLogsLoading(true);
+    try {
+      const res = await apiCall(`/api/events?page=${activityPage}&limit=30`, "GET", null, token);
+      if (res && res.events) {
+        setActivity(res.events);
+        if (res.total != null) setActivityTotal(res.total);
+        if (res.granted_count != null) {
+          setActivityStats({ granted: res.granted_count, denied: res.denied_count });
+        }
+      }
+    } catch (err) {
+      console.error("Refresh activity error:", err);
+    } finally {
+      setIsLogsLoading(false);
+    }
+  };
 
   useEffect(() => {
     if (!token) return;
@@ -2922,7 +3233,16 @@ function Shell(){
     stream.addEventListener("access_event", (e) => {
       try {
         const ev = JSON.parse(e.data);
-        setActivity(prev => [ev, ...prev.slice(0, 29)]);
+        setActivityTotal(prev => prev + 1);
+        const dec = String(ev.decision || ev.result || "").toUpperCase();
+        const isGranted = dec === "ALLOWED" || dec === "GRANTED";
+        setActivityStats(prev => ({
+          granted: prev.granted + (isGranted ? 1 : 0),
+          denied: prev.denied + (isGranted ? 0 : 1)
+        }));
+        if (activityPage === 1) {
+          setActivity(prev => [ev, ...prev.slice(0, 29)]);
+        }
         apiCall("/api/attendance?date=" + selectedDate, "GET", null, token).then(r => setAttendance(r.attendance || []));
         apiCall("/api/occupancy", "GET", null, token).then(r => setOccupancy(r || { count: 0, people: [] }));
       } catch(err) {}
@@ -2933,7 +3253,7 @@ function Shell(){
     });
 
     return () => stream.close();
-  }, [token, selectedDate]);
+  }, [token, selectedDate, activityPage]);
 
   const departments = useMemo(() => {
     if (departmentsList && departmentsList.length > 0) return departmentsList.map(d => d.name);
@@ -3215,6 +3535,12 @@ function Shell(){
               employees={employees}
               attendance={attendance}
               activity={activity}
+              activityTotal={activityTotal}
+              activityPage={activityPage}
+              activityStats={activityStats}
+              onPageChange={handleActivityPageChange}
+              onRefreshActivity={handleRefreshActivity}
+              isLogsLoading={isLogsLoading}
               occupancy={occupancy}
               dateStr={selectedDate}
             />

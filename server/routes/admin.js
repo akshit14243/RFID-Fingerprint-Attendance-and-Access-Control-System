@@ -507,9 +507,6 @@ router.delete("/shifts/:id", requireUser, requireAdmin, async (req, res, next) =
   try {
     const shift = await one("SELECT * FROM shifts WHERE id = $1", [req.params.id]);
     if (!shift) return res.status(404).json({ error: "not_found" });
-    if (shift.is_default) {
-      return res.status(400).json({ error: "default_shift", message: "Cannot delete the default shift schedule." });
-    }
     await one("DELETE FROM shifts WHERE id = $1 RETURNING id", [req.params.id]);
     res.json({ deleted: shift.id });
   } catch (err) {

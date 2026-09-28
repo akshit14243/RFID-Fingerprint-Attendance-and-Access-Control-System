@@ -1,5 +1,5 @@
 const express = require("express");
-const { query } = require("../db");
+const { query, one } = require("../db");
 const { requireUser } = require("../auth");
 
 const router = express.Router();
@@ -16,7 +16,9 @@ router.get("/occupancy", requireUser, async (_req, res, next) => {
 router.get("/events", requireUser, async (req, res, next) => {
   try {
     const { from, to, room_id, person_id, decision, direction } = req.query;
-    const limit = Math.min(Number(req.query.limit || 100), 1000);
+    const page = Math.max(1, parseInt(req.query.page, 10) || 1);
+    const limit = Math.max(1, Math.min(parseInt(req.query.limit, 10) || 30, 200));
+    const offset = (page - 1) * limit;
 
     const where = [];
     const params = [];
@@ -33,7 +35,21 @@ router.get("/events", requireUser, async (req, res, next) => {
     add("e.decision = $?", decision);
     add("e.direction = $?", direction);
 
-    params.push(limit);
+    const whereClause = where.length ? "WHERE " + where.join(" AND ") : "";
+
+    const stats = await one(
+      `SELECT COUNT(*)::int AS total,
+              COUNT(*) FILTER (WHERE e.decision = 'ALLOWED')::int AS granted,
+              COUNT(*) FILTER (WHERE e.decision != 'ALLOWED')::int AS denied
+         FROM access_events e
+        ${whereClause}`,
+      params
+    );
+
+    const total = stats ? stats.total : 0;
+    const totalPages = Math.max(1, Math.ceil(total / limit));
+
+    const queryParams = [...params, limit, offset];
     const rows = await query(
       `SELECT e.id, e.scanned_at, e.received_at, e.direction, e.decision, e.reason_code,
               e.card_uid, e.fingerprint_used, e.source,
@@ -48,12 +64,21 @@ router.get("/events", requireUser, async (req, res, next) => {
          LEFT JOIN people cp ON cp.id = c.person_id
          JOIN rooms   r ON r.id = e.room_id
          JOIN devices d ON d.id = e.device_id
-        ${where.length ? "WHERE " + where.join(" AND ") : ""}
+        ${whereClause}
         ORDER BY e.scanned_at DESC, e.id DESC
-        LIMIT $${params.length}`,
-      params,
+        LIMIT $${queryParams.length - 1} OFFSET $${queryParams.length}`,
+      queryParams,
     );
-    res.json({ count: rows.length, events: rows });
+    res.json({
+      count: rows.length,
+      total,
+      page,
+      limit,
+      total_pages: totalPages,
+      granted_count: stats ? stats.granted : 0,
+      denied_count: stats ? stats.denied : 0,
+      events: rows,
+    });
   } catch (err) {
     next(err);
   }

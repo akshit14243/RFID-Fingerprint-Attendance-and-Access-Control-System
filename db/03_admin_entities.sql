@@ -20,10 +20,6 @@ CREATE TABLE IF NOT EXISTS shifts (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-INSERT INTO shifts (shift_name, start_time, end_time, grace_minutes, is_default)
-VALUES ('General Shift', '09:30', '18:30', 15, TRUE)
-ON CONFLICT (shift_name) DO NOTHING;
-
 CREATE TABLE IF NOT EXISTS holidays (
   id SERIAL PRIMARY KEY,
   holiday_date DATE NOT NULL UNIQUE,
