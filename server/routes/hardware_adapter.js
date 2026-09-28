@@ -83,26 +83,70 @@ router.get("/access_control/authenticate.php", async (req, res, next) => {
     // Check if there is an active enrollment job waiting for a card tap
     try {
       const pendingJob = await one(
-        `SELECT id, person_id, fingerprint_id FROM fingerprint_enrollment_jobs
+        `SELECT id, person_id, fingerprint_id, updated_at FROM fingerprint_enrollment_jobs
           WHERE status IN ('REQUESTED', 'RUNNING') AND step = 'WAITING_CARD'
             AND (target_device_id = $1 OR target_device_id IS NULL)
           ORDER BY id DESC LIMIT 1`,
         [device.id]
       );
       if (pendingJob) {
+        const ageSec = (Date.now() - new Date(pendingJob.updated_at).getTime()) / 1000;
+        if (ageSec > 35) {
+          await query(
+            `UPDATE fingerprint_enrollment_jobs
+                SET status = 'TIMEOUT', step = 'TIMEOUT',
+                    error_message = 'Hardware card scan timed out.',
+                    updated_at = now()
+              WHERE id = $1`,
+            [pendingJob.id]
+          );
+          broadcast("enrollment_update", {
+            job_id: pendingJob.id,
+            status: "TIMEOUT",
+            step: "TIMEOUT",
+            error_message: "Hardware card scan timed out."
+          });
+        } else {
+          await query(
+            `UPDATE fingerprint_enrollment_jobs
+                SET card_uid = $1, step = 'CARD_TAPPED', status = 'RUNNING', updated_at = now()
+              WHERE id = $2`,
+            [nfcUid, pendingJob.id]
+          );
+          broadcast("enrollment_update", {
+            job_id: pendingJob.id,
+            person_id: pendingJob.person_id,
+            card_uid: nfcUid,
+            fingerprint_id: pendingJob.fingerprint_id,
+            step: "CARD_TAPPED",
+            status: "RUNNING"
+          });
+        }
+      }
+
+      // If there was an active fingerprint enrollment job on this terminal, but an NFC scan came through,
+      // the hardware exited fingerprint enrollment and returned to standby door scanning!
+      const pendingFpJob = await one(
+        `SELECT id FROM fingerprint_enrollment_jobs
+          WHERE status IN ('REQUESTED', 'RUNNING') AND step IN ('FINGER_1', 'FINGER_2')
+            AND (target_device_id = $1 OR target_device_id IS NULL)
+          ORDER BY id DESC LIMIT 1`,
+        [device.id]
+      );
+      if (pendingFpJob) {
         await query(
           `UPDATE fingerprint_enrollment_jobs
-              SET card_uid = $1, step = 'CARD_TAPPED', status = 'RUNNING', updated_at = now()
-            WHERE id = $2`,
-          [nfcUid, pendingJob.id]
+              SET status = 'TIMEOUT', step = 'TIMEOUT',
+                  error_message = 'Hardware exited fingerprint enrollment and returned to standby.',
+                  updated_at = now()
+            WHERE id = $1`,
+          [pendingFpJob.id]
         );
         broadcast("enrollment_update", {
-          job_id: pendingJob.id,
-          person_id: pendingJob.person_id,
-          card_uid: nfcUid,
-          fingerprint_id: pendingJob.fingerprint_id,
-          step: "CARD_TAPPED",
-          status: "RUNNING"
+          job_id: pendingFpJob.id,
+          status: "TIMEOUT",
+          step: "TIMEOUT",
+          error_message: "Hardware exited fingerprint enrollment and returned to standby."
         });
       }
     } catch (e) {
@@ -260,6 +304,42 @@ router.get("/access_control/log_access.php", async (req, res, next) => {
     });
 
     broadcast("occupancy_changed", { room_id: doorId });
+
+    // If hardware logged a normal door access event, any active enrollment job on this terminal has timed out / reverted
+    try {
+      const activeEnrollJob = await one(
+        `SELECT id FROM fingerprint_enrollment_jobs
+          WHERE status IN ('REQUESTED', 'RUNNING')
+            AND (target_device_id = $1 OR target_device_id IS NULL)
+            AND updated_at < now() - interval '5 seconds'
+          ORDER BY id DESC LIMIT 1`,
+        [deviceId]
+      );
+      if (activeEnrollJob) {
+        await query(
+          `UPDATE fingerprint_enrollment_jobs
+              SET status = 'TIMEOUT', step = 'TIMEOUT',
+                  error_message = 'Hardware resumed normal door access control.',
+                  updated_at = now()
+            WHERE id = $1`,
+          [activeEnrollJob.id]
+        );
+        await query(
+          `UPDATE device_commands
+              SET status = 'TIMEOUT'
+            WHERE job_id = $1 AND status = 'PENDING'`,
+          [activeEnrollJob.id]
+        );
+        broadcast("enrollment_update", {
+          job_id: activeEnrollJob.id,
+          status: "TIMEOUT",
+          step: "TIMEOUT",
+          error_message: "Hardware resumed normal door access control."
+        });
+      }
+    } catch (e) {
+      console.warn("Log access enrollment sync note:", e.message);
+    }
 
     res.json({ success: true, event_id: event.id });
   } catch (err) {

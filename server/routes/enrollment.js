@@ -100,13 +100,20 @@ const handleStartEnrollment = async (req, res, next) => {
     // Allocate next fingerprint slot
     const nextSlot = await getNextFingerprintSlot();
 
-    // Cancel existing pending jobs for this person/device
+    // Cancel existing pending jobs and commands for this person/device
     await query(
       `UPDATE fingerprint_enrollment_jobs
           SET status = 'CANCELLED', updated_at = now()
         WHERE status IN ('REQUESTED', 'RUNNING')
           AND (person_id = $1 OR target_device_id = $2)`,
       [person.id, targetDeviceId]
+    );
+    await query(
+      `UPDATE device_commands
+          SET status = 'CANCELLED'
+        WHERE status = 'PENDING'
+          AND (user_id = $1 OR esp32_id = $2)`,
+      [person.id, esp32Key]
     );
 
     // Create job
@@ -165,7 +172,7 @@ const handleEnrollmentStatus = async (req, res, next) => {
     const jobId = Number(req.params.id || req.params.jobId);
     if (!jobId) return res.status(400).json({ error: "bad_request" });
 
-    const job = await one(
+    let job = await one(
       `SELECT j.*,
               p.employee_code, p.full_name, p.department, p.person_type, p.email,
               d.device_key, d.device_label
@@ -178,6 +185,37 @@ const handleEnrollmentStatus = async (req, res, next) => {
 
     if (!job) {
       return res.status(404).json({ error: "not_found", message: "Job not found" });
+    }
+
+    // Auto-expire stale jobs: if active job has had no update for > 35 seconds
+    if (["REQUESTED", "RUNNING"].includes(job.status)) {
+      const updatedAt = new Date(job.updated_at).getTime();
+      const now = Date.now();
+      if (now - updatedAt > 35000) {
+        await query(
+          `UPDATE fingerprint_enrollment_jobs
+              SET status = 'TIMEOUT', step = 'TIMEOUT',
+                  error_message = 'Hardware enrollment timed out. Terminal returned to standby state.',
+                  updated_at = now()
+            WHERE id = $1`,
+          [jobId]
+        );
+        await query(
+          `UPDATE device_commands
+              SET status = 'TIMEOUT'
+            WHERE job_id = $1 AND status = 'PENDING'`,
+          [jobId]
+        );
+        job.status = "TIMEOUT";
+        job.step = "TIMEOUT";
+        job.error_message = "Hardware enrollment timed out. Terminal returned to standby state.";
+        broadcast("enrollment_update", {
+          job_id: job.id,
+          status: "TIMEOUT",
+          step: "TIMEOUT",
+          error_message: job.error_message,
+        });
+      }
     }
 
     res.json({ success: true, job, ...job });
@@ -207,12 +245,16 @@ async function advanceEnrollmentStep(jobId, step, cardUid = null, errorMsg = nul
   const validCard = cardUid ? cleanUid(cardUid) : job.card_uid;
   let status = job.status;
 
-  if (step === "FAILED") {
-    status = "FAILED";
+  if (step === "FAILED" || step === "TIMEOUT") {
+    status = step === "TIMEOUT" ? "TIMEOUT" : "FAILED";
   } else if (step === "COMPLETED") {
     status = "COMPLETED";
   } else {
     status = "RUNNING";
+  }
+
+  if (["FAILED", "TIMEOUT", "CANCELLED"].includes(status)) {
+    await query("UPDATE device_commands SET status = $1 WHERE job_id = $2 AND status = 'PENDING'", [status, jobId]);
   }
 
   // If completed, commit to database credentials & access rules
@@ -323,6 +365,16 @@ async function handleEnrollmentPoll(req, res, next) {
   try {
     const esp32Id = String(req.query.esp32_id || req.query.device_key || "").trim();
 
+    // Auto-expire stale pending jobs (> 35s) so hardware never picks up dead sessions
+    await query(
+      `UPDATE fingerprint_enrollment_jobs
+          SET status = 'TIMEOUT', step = 'TIMEOUT',
+              error_message = 'Hardware enrollment timed out.',
+              updated_at = now()
+        WHERE status IN ('REQUESTED', 'RUNNING')
+          AND updated_at < now() - interval '35 seconds'`
+    );
+
     let targetDev = null;
     if (esp32Id) {
       targetDev = await one(
@@ -392,14 +444,19 @@ async function handleEnrollmentReport(req, res, next) {
     const fpId = Number(data.fingerprint_id || req.query.fingerprint_id || 0);
     const step = data.step || (data.success ? "COMPLETED" : "FAILED");
     const isSuccess = data.success === undefined ? true : Boolean(data.success);
+    const isTimeout =
+      String(data.status || data.step || data.message || "").toUpperCase().includes("TIMEOUT") ||
+      String(req.query.status || req.query.step || req.query.message || "").toUpperCase().includes("TIMEOUT");
 
     if (!jobId) {
       return res.status(400).json({ success: false, message: "Missing required job_id" });
     }
 
-    if (!isSuccess) {
-      await advanceEnrollmentStep(jobId, "FAILED", null, data.message || "Hardware enrollment reported failure");
-      return res.json({ success: true, message: "Enrollment marked as FAILED", job_id: jobId, status: "FAILED" });
+    if (!isSuccess || isTimeout) {
+      const finalStep = isTimeout ? "TIMEOUT" : "FAILED";
+      const errMsg = data.message || (isTimeout ? "Hardware enrollment timed out. Terminal returned to standby state." : "Hardware enrollment reported failure");
+      await advanceEnrollmentStep(jobId, finalStep, null, errMsg);
+      return res.json({ success: true, message: `Enrollment marked as ${finalStep}`, job_id: jobId, status: finalStep });
     }
 
     const result = await advanceEnrollmentStep(jobId, step, cardUid);
@@ -422,6 +479,8 @@ async function handleEnrollmentReport(req, res, next) {
 router.post("/access_control/test_enrollment.php", handleEnrollmentReport);
 router.post("/access_control/access_control_test/test_enrollment.php", handleEnrollmentReport);
 router.post("/api/enrollment/complete", handleEnrollmentReport);
+router.post("/api/enrollment/fail", handleEnrollmentReport);
+router.post("/api/enrollment/timeout", handleEnrollmentReport);
 router.post("/api/fingerprint/enrollment/:id/complete", handleEnrollmentReport);
 router.post("/api/fingerprint/enrollment/complete", handleEnrollmentReport);
 router.post("/api/fingerprint-enrollment/complete", handleEnrollmentReport);
