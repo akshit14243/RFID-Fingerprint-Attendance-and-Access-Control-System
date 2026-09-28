@@ -1715,9 +1715,6 @@ function UnlockDeleteModal({ isOpen, onClose, onUnlock, token }) {
                 <Icon name={showPassword ? "eye-off" : "eye"} size={16}/>
               </button>
             </div>
-            <div style={{fontSize:11, color:"var(--text-faint)", marginTop:4}}>
-              Master password: <span className="mono" style={{color:"var(--text-dim)"}}>ADMIN@DELETE#2026</span> or <span className="mono" style={{color:"var(--text-dim)"}}>admin123</span>
-            </div>
           </div>
 
           <div style={{display:"flex", justifyContent:"flex-end", gap:8, marginTop:6}}>
@@ -3056,8 +3053,8 @@ function AddHolidayModal({isOpen, onClose, onSave}){
 }
 
 function LoginPage({onLogin}){
-  const [u, setU] = useState("admin@example.com");
-  const [p, setP] = useState("admin123");
+  const [u, setU] = useState("");
+  const [p, setP] = useState("");
   const [err, setErr] = useState("");
   const [loading, setLoading] = useState(false);
 
@@ -3096,9 +3093,6 @@ function LoginPage({onLogin}){
         <Button variant="primary" type="submit" disabled={loading} style={{width:"100%", justifyContent:"center", marginTop:18}}>
           {loading ? "Signing in..." : "Sign in"}
         </Button>
-        <div style={{fontSize:11.5, color:"var(--text-faint)", marginTop:14, textAlign:"center"}}>
-          Default: <span className="mono">admin@example.com</span> &middot; <span className="mono">admin123</span>
-        </div>
       </form>
     </div>
   );

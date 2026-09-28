@@ -8,16 +8,13 @@ const { broadcast } = require("../bus");
 
 const router = express.Router();
 
-const VALID_DELETE_PASSWORDS = [
-  process.env.DELETE_PASSWORD,
-  "ADMIN@DELETE#2026",
-  "admin123",
-  "delete123",
-].filter(Boolean);
-
 function isValidDeletePassword(pw) {
   if (!pw || typeof pw !== "string") return false;
-  return VALID_DELETE_PASSWORDS.includes(pw.trim());
+  const configured = (process.env.DELETE_PASSWORD || "ADMIN@DELETE#2026")
+    .split(",")
+    .map(p => p.trim())
+    .filter(Boolean);
+  return configured.includes(pw.trim());
 }
 
 const personSchema = z.object({
