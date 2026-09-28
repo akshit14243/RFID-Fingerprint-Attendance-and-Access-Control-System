@@ -1372,6 +1372,9 @@ function AdminPage({departments, employees, rules, shifts, holidays, rooms, onAd
       <AddShiftModal isOpen={isShiftModalOpen} onClose={()=>setIsShiftModalOpen(false)} onSave={onAddShift} />
       <AddHolidayModal isOpen={isHolidayModalOpen} onClose={()=>setIsHolidayModalOpen(false)} onSave={onAddHoliday} />
     </Card>
+  );
+}
+
 function UnlockDeleteModal({ isOpen, onClose, onUnlock, token }) {
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
