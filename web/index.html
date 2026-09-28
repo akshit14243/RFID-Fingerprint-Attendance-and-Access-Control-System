@@ -120,6 +120,10 @@ function Icon({name, size=18}){
     case "check-circle": return <svg {...p}><circle cx="12" cy="12" r="9"/><path d="M8.5 12l2.5 2.5 5-5"/></svg>;
     case "alert-triangle": return <svg {...p}><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>;
     case "refresh": return <svg {...p}><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>;
+    case "lock": return <svg {...p}><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>;
+    case "unlock": return <svg {...p}><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 9.9-1"/></svg>;
+    case "eye": return <svg {...p}><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>;
+    case "eye-off": return <svg {...p}><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>;
     default: return null;
   }
 }
@@ -828,7 +832,7 @@ function DashboardPage({
   );
  }
 
- function EmployeesPage({employees, departments, onSelect, onAddClick, onDeactivate}){
+ function EmployeesPage({employees, departments, onSelect, onAddClick, onDeactivate, onDelete, isDeleteUnlocked, onUnlockClick, onLockClick}){
   const [q, setQ] = useState("");
   const [dept, setDept] = useState("all");
   const filtered = employees.filter(e =>
@@ -849,6 +853,35 @@ function DashboardPage({
           <option value="all">All departments</option>
           {departments.map(d=><option key={d} value={d}>{d}</option>)}
         </select>
+
+        {/* Security Unlock Toggle */}
+        {!isDeleteUnlocked ? (
+          <Button
+            variant="ghost"
+            onClick={onUnlockClick}
+            title="Enter security password to reveal permanent employee deletion"
+            style={{border:"1px solid var(--border)", fontSize:12.5, color:"var(--text-dim)"}}
+          >
+            <Icon name="lock" size={14}/> Unlock Delete
+          </Button>
+        ) : (
+          <div style={{
+            display:"inline-flex", alignItems:"center", gap:6,
+            background:"var(--rose-bg)", border:"1px solid var(--rose)",
+            padding:"6px 10px", borderRadius:8, fontSize:12, color:"var(--rose)", fontWeight:600
+          }}>
+            <Icon name="unlock" size={13}/>
+            <span>Delete Mode Active</span>
+            <button
+              type="button"
+              onClick={onLockClick}
+              style={{background:"none", border:"none", cursor:"pointer", color:"var(--text-dim)", marginLeft:6, fontSize:11, textDecoration:"underline"}}
+            >
+              Lock
+            </button>
+          </div>
+        )}
+
         <Button variant="primary" onClick={onAddClick}><Icon name="plus" size={15}/>Add employee</Button>
       </div>
       <div style={{overflowX:"auto"}}>
@@ -869,7 +902,7 @@ function DashboardPage({
                   <Td>{e.card_uid ? <span className="mono" style={{color:"var(--teal)"}}>{e.card_uid}</span> : <span style={{color:"var(--text-faint)"}}>not linked</span>}</Td>
                   <Td>{e.fingerprint_slot!=null ? <span className="mono" style={{color:"var(--teal)"}}>slot {e.fingerprint_slot}</span> : <span style={{color:"var(--text-faint)"}}>not linked</span>}</Td>
                   <Td><StatusBadge status={e.is_active ? "active" : "inactive"}/></Td>
-                  <Td style={{textAlign:"right"}}>
+                  <Td style={{textAlign:"right", whiteSpace:"nowrap"}}>
                     <button
                       type="button"
                       onClick={(evt)=>{
@@ -889,6 +922,33 @@ function DashboardPage({
                     >
                       {e.is_active ? "Deactivate" : "Activate"}
                     </button>
+
+                    {isDeleteUnlocked && (
+                      <button
+                        type="button"
+                        onClick={(evt)=>{
+                          evt.stopPropagation();
+                          if (onDelete) onDelete(e);
+                        }}
+                        style={{
+                          background: "var(--rose-bg)",
+                          color: "var(--rose)",
+                          border: "1px solid var(--rose)",
+                          borderRadius: 6,
+                          padding: "5px 10px",
+                          fontSize: 12,
+                          fontWeight: 600,
+                          cursor: "pointer",
+                          marginLeft: 6,
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: 4
+                        }}
+                        title="Permanently delete employee & all data"
+                      >
+                        <Icon name="trash" size={12}/> Delete
+                      </button>
+                    )}
                   </Td>
                 </tr>
               ))
@@ -900,7 +960,7 @@ function DashboardPage({
   );
 }
 
-function EmployeeProfile({emp, attendanceHistory, onBack, onDeactivate, token}){
+function EmployeeProfile({emp, attendanceHistory, onBack, onDeactivate, onDelete, isDeleteUnlocked, onUnlockClick, token}){
   const nameParts = (emp.full_name || "Employee").split(" ");
   const initials = nameParts.length > 1 ? nameParts[0][0] + nameParts[1][0] : nameParts[0].slice(0,2);
   const presentDays = attendanceHistory.filter(a => a.first_in).length;
@@ -932,9 +992,34 @@ function EmployeeProfile({emp, attendanceHistory, onBack, onDeactivate, token}){
           </div>
 
           <div style={{marginTop: 20, paddingTop: 16, borderTop: "1px solid var(--border)"}}>
-            <Button variant="danger" onClick={()=>onDeactivate(emp)} style={{width:"100%", justifyContent:"center"}}>
-              <Icon name="trash" size={15}/> {emp.is_active ? "Deactivate Employee" : "Reactivate Employee"}
+            <Button variant="ghost" onClick={()=>onDeactivate(emp)} style={{width:"100%", justifyContent:"center", border:"1px solid var(--border)"}}>
+              <Icon name="x" size={15}/> {emp.is_active ? "Deactivate Employee" : "Reactivate Employee"}
             </Button>
+
+            {isDeleteUnlocked ? (
+              <Button
+                variant="danger"
+                onClick={()=>onDelete && onDelete(emp)}
+                style={{
+                  width:"100%", justifyContent:"center", marginTop: 8,
+                  background: "var(--rose)", color: "#fff", border: "1px solid var(--rose)"
+                }}
+              >
+                <Icon name="trash" size={15}/> Permanently Delete All Data
+              </Button>
+            ) : (
+              <button
+                type="button"
+                onClick={onUnlockClick}
+                style={{
+                  width:"100%", background:"none", border:"none", cursor:"pointer",
+                  fontSize:11.5, color:"var(--text-dim)", textDecoration:"underline",
+                  marginTop: 10, display: "flex", alignItems: "center", justifyContent: "center", gap: 5
+                }}
+              >
+                <Icon name="lock" size={12}/> Unlock Permanent Deletion
+              </button>
+            )}
           </div>
         </Card>
 
@@ -1287,6 +1372,201 @@ function AdminPage({departments, employees, rules, shifts, holidays, rooms, onAd
       <AddShiftModal isOpen={isShiftModalOpen} onClose={()=>setIsShiftModalOpen(false)} onSave={onAddShift} />
       <AddHolidayModal isOpen={isHolidayModalOpen} onClose={()=>setIsHolidayModalOpen(false)} onSave={onAddHoliday} />
     </Card>
+function UnlockDeleteModal({ isOpen, onClose, onUnlock, token }) {
+  const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [err, setErr] = useState("");
+
+  if (!isOpen) return null;
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    if (!password.trim()) {
+      setErr("Master security password is required");
+      return;
+    }
+    setLoading(true);
+    setErr("");
+    try {
+      const res = await apiCall("/api/verify-delete-password", "POST", { password: password.trim() }, token);
+      if (res && res.success) {
+        onUnlock(password.trim());
+      } else {
+        setErr(res?.message || "Invalid security password");
+      }
+    } catch (error) {
+      setErr(error.message || "Invalid master security password");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="modal-backdrop">
+      <div className="modal-box" style={{maxWidth: 440}}>
+        <div style={{display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:14}}>
+          <div style={{display:"flex", alignItems:"center", gap:8}}>
+            <div style={{width:32, height:32, borderRadius:8, background:"var(--rose-bg)", color:"var(--rose)", display:"flex", alignItems:"center", justifyContent:"center"}}>
+              <Icon name="lock" size={18}/>
+            </div>
+            <div>
+              <div style={{fontSize:15.5, fontWeight:700}}>Security Authorization</div>
+              <div style={{fontSize:11.5, color:"var(--text-dim)"}}>Permanent Deletion Protection</div>
+            </div>
+          </div>
+          <button onClick={onClose} style={{background:"none", border:"none", cursor:"pointer", color:"var(--text-dim)"}}><Icon name="x" size={18}/></button>
+        </div>
+
+        <form onSubmit={handleSubmit} style={{display:"flex", flexDirection:"column", gap:14}}>
+          <div style={{fontSize:12.5, color:"var(--text-dim)", lineHeight:1.5}}>
+            Employee deletion is locked by default to prevent accidental data loss. Enter the master security password to reveal permanent deletion controls.
+          </div>
+
+          {err && (
+            <div style={{color:"var(--rose)", background:"var(--rose-bg)", border:"1px solid var(--rose)", padding:"8px 12px", borderRadius:8, fontSize:12}}>
+              {err}
+            </div>
+          )}
+
+          <div>
+            <label style={{fontSize:12, color:"var(--text-dim)", display:"block", marginBottom:5, fontWeight:600}}>Master Security Password</label>
+            <div style={{position:"relative"}}>
+              <input
+                type={showPassword ? "text" : "password"}
+                autoFocus
+                placeholder="Enter deletion password..."
+                value={password}
+                onChange={e => { setPassword(e.target.value); setErr(""); }}
+                style={{width:"100%", padding:"9px 36px 9px 12px", borderRadius:8, border:"1px solid var(--border)", background:"var(--surface-2)", color:"var(--text)", fontSize:13.5}}
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword(!showPassword)}
+                style={{position:"absolute", right:10, top:9, background:"none", border:"none", cursor:"pointer", color:"var(--text-dim)"}}
+              >
+                <Icon name={showPassword ? "eye-off" : "eye"} size={16}/>
+              </button>
+            </div>
+            <div style={{fontSize:11, color:"var(--text-faint)", marginTop:4}}>
+              Master password: <span className="mono" style={{color:"var(--text-dim)"}}>ADMIN@DELETE#2026</span> or <span className="mono" style={{color:"var(--text-dim)"}}>admin123</span>
+            </div>
+          </div>
+
+          <div style={{display:"flex", justifyContent:"flex-end", gap:8, marginTop:6}}>
+            <Button variant="ghost" onClick={onClose}>Cancel</Button>
+            <Button variant="danger" type="submit" disabled={loading} style={{background:"var(--rose)", color:"#fff"}}>
+              {loading ? <><Icon name="loader" size={14}/> Verifying...</> : <><Icon name="unlock" size={14}/> Unlock Deletion</>}
+            </Button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+function PermanentDeleteModal({ emp, isOpen, onClose, onConfirm, defaultPassword="", token }) {
+  const [password, setPassword] = useState(defaultPassword);
+  const [loading, setLoading] = useState(false);
+  const [err, setErr] = useState("");
+
+  useEffect(() => {
+    if (isOpen) {
+      setPassword(defaultPassword);
+      setErr("");
+      setLoading(false);
+    }
+  }, [isOpen, defaultPassword]);
+
+  if (!isOpen || !emp) return null;
+
+  const handleDelete = async (e) => {
+    e.preventDefault();
+    if (!password.trim()) {
+      setErr("Master security password is required to confirm deletion");
+      return;
+    }
+    setLoading(true);
+    setErr("");
+    try {
+      await onConfirm(emp, password.trim());
+      onClose();
+    } catch (error) {
+      setErr(error.message || "Failed to permanently delete employee");
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="modal-backdrop">
+      <div className="modal-box" style={{maxWidth: 480}}>
+        <div style={{display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:14}}>
+          <div style={{display:"flex", alignItems:"center", gap:8}}>
+            <div style={{width:32, height:32, borderRadius:8, background:"var(--rose-bg)", color:"var(--rose)", display:"flex", alignItems:"center", justifyContent:"center"}}>
+              <Icon name="alert-triangle" size={18}/>
+            </div>
+            <div>
+              <div style={{fontSize:16, fontWeight:700, color:"var(--rose)"}}>Permanent Employee Deletion</div>
+              <div style={{fontSize:11.5, color:"var(--text-dim)"}}>Irreversible Credential & Record Wipe</div>
+            </div>
+          </div>
+          <button onClick={onClose} style={{background:"none", border:"none", cursor:"pointer", color:"var(--text-dim)"}}><Icon name="x" size={18}/></button>
+        </div>
+
+        <form onSubmit={handleDelete} style={{display:"flex", flexDirection:"column", gap:14}}>
+          <div style={{
+            background:"var(--rose-bg)", border:"1px solid var(--rose)",
+            padding:"10px 14px", borderRadius:8, fontSize:12.5, color:"var(--text)", lineHeight:1.5
+          }}>
+            <strong>Warning:</strong> You are about to permanently delete <strong>{emp.full_name}</strong> (<span className="mono">{emp.employee_code}</span>). All biometric templates, RFID cards, and access permissions will be completely purged from hardware & database.
+          </div>
+
+          <div style={{background:"var(--surface-2)", border:"1px solid var(--border)", borderRadius:8, padding:"10px 14px", fontSize:12}}>
+            <div style={{fontWeight:600, marginBottom:6, color:"var(--text-dim)"}}>DATA THAT WILL BE PURGED:</div>
+            <div style={{display:"flex", flexDirection:"column", gap:4}}>
+              <div style={{display:"flex", alignItems:"center", gap:6, color:"var(--rose)"}}>
+                <Icon name="x" size={13}/> RFID Card UID: <span className="mono">{emp.card_uid || "None assigned"}</span>
+              </div>
+              <div style={{display:"flex", alignItems:"center", gap:6, color:"var(--rose)"}}>
+                <Icon name="x" size={13}/> Fingerprint Biometric Slot: <span className="mono">{emp.fingerprint_slot != null ? `Slot #${emp.fingerprint_slot}` : "None"}</span>
+              </div>
+              <div style={{display:"flex", alignItems:"center", gap:6, color:"var(--rose)"}}>
+                <Icon name="x" size={13}/> Physical template files on server & sensor command queue
+              </div>
+              <div style={{display:"flex", alignItems:"center", gap:6, color:"var(--rose)"}}>
+                <Icon name="x" size={13}/> Employee profile and attendance logs
+              </div>
+            </div>
+          </div>
+
+          {err && (
+            <div style={{color:"var(--rose)", background:"var(--rose-bg)", border:"1px solid var(--rose)", padding:"8px 12px", borderRadius:8, fontSize:12}}>
+              {err}
+            </div>
+          )}
+
+          <div>
+            <label style={{fontSize:12, color:"var(--text-dim)", display:"block", marginBottom:4, fontWeight:600}}>
+              Confirm Security Password
+            </label>
+            <input
+              type="password"
+              placeholder="Enter master password to confirm..."
+              value={password}
+              onChange={e => { setPassword(e.target.value); setErr(""); }}
+              style={{width:"100%", padding:"9px 12px", borderRadius:8, border:"1px solid var(--border)", background:"var(--surface-2)", color:"var(--text)", fontSize:13.5}}
+            />
+          </div>
+
+          <div style={{display:"flex", justifyContent:"flex-end", gap:8, marginTop:6}}>
+            <Button variant="ghost" onClick={onClose}>Cancel</Button>
+            <Button variant="danger" type="submit" disabled={loading} style={{background:"var(--rose)", color:"#fff"}}>
+              {loading ? <><Icon name="loader" size={14}/> Deleting...</> : <><Icon name="trash" size={14}/> Permanently Delete All Data</>}
+            </Button>
+          </div>
+        </form>
+      </div>
+    </div>
   );
 }
 
@@ -2564,6 +2844,10 @@ function Shell(){
   const [selectedEmp, setSelectedEmp] = useState(null);
   const [now, setNow] = useState(new Date());
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [isDeleteUnlocked, setIsDeleteUnlocked] = useState(false);
+  const [deletePassword, setDeletePassword] = useState("");
+  const [showUnlockModal, setShowUnlockModal] = useState(false);
+  const [deleteTargetEmp, setDeleteTargetEmp] = useState(null);
 
   useEffect(() => {
     document.documentElement.setAttribute("data-theme", theme);
@@ -2754,29 +3038,36 @@ function Shell(){
   }
 };
  
-  const handleDeleteEmployee = async (employee) => {
-  if (!employee || !employee.id) return;
+  const handleUnlockDelete = (pw) => {
+    setDeletePassword(pw);
+    setIsDeleteUnlocked(true);
+    setShowUnlockModal(false);
+  };
 
-  const confirmed = window.confirm(
-    `Delete employee "${employee.name}"?`
-  );
+  const handleLockDelete = () => {
+    setIsDeleteUnlocked(false);
+    setDeletePassword("");
+  };
 
-  if (!confirmed) return;
-
-  try {
-    await apiCall(
-      `/api/people/${employee.id}`,
-      "DELETE",
-      null,
-      token
-    );
-
-    await loadData();
-  } catch (err) {
-    console.error("Delete employee failed:", err);
-    alert(err.message || "Failed to delete employee");
-  }
- };
+  const handlePermanentDelete = async (emp, pw) => {
+    const passwordToUse = (pw || deletePassword || "").trim();
+    if (!emp || !emp.id) return;
+    try {
+      await apiCall(
+        `/api/people/${emp.id}/permanent`,
+        "DELETE",
+        { password: passwordToUse },
+        token
+      );
+      setDeleteTargetEmp(null);
+      setSelectedEmp(null);
+      await loadData();
+      alert(`Employee ${emp.full_name} and all biometric/NFC credentials were permanently deleted.`);
+    } catch (err) {
+      console.error("Permanent deletion failed:", err);
+      throw err;
+    }
+  };
 
   const handleDeactivate = async (emp) => {
     try {
@@ -2932,6 +3223,10 @@ function Shell(){
               onSelect={setSelectedEmp}
               onAddClick={()=>setIsAddModalOpen(true)}
               onDeactivate={handleDeactivate}
+              onDelete={(emp)=>setDeleteTargetEmp(emp)}
+              isDeleteUnlocked={isDeleteUnlocked}
+              onUnlockClick={()=>setShowUnlockModal(true)}
+              onLockClick={handleLockDelete}
             />
           )}
           {page==="employees" && selectedEmp && (
@@ -2940,6 +3235,9 @@ function Shell(){
               attendanceHistory={attendance.filter(a => a.person_id === selectedEmp.id || a.employee_code === selectedEmp.employee_code)}
               onBack={()=>setSelectedEmp(null)}
               onDeactivate={handleDeactivate}
+              onDelete={(emp)=>setDeleteTargetEmp(emp)}
+              isDeleteUnlocked={isDeleteUnlocked}
+              onUnlockClick={()=>setShowUnlockModal(true)}
               token={token}
             />
           )}
@@ -2987,6 +3285,22 @@ function Shell(){
         onSaved={loadData}
         departments={departmentsList}
         devices={devices}
+        token={token}
+      />
+
+      <UnlockDeleteModal
+        isOpen={showUnlockModal}
+        onClose={()=>setShowUnlockModal(false)}
+        onUnlock={handleUnlockDelete}
+        token={token}
+      />
+
+      <PermanentDeleteModal
+        emp={deleteTargetEmp}
+        isOpen={Boolean(deleteTargetEmp)}
+        onClose={()=>setDeleteTargetEmp(null)}
+        onConfirm={handlePermanentDelete}
+        defaultPassword={deletePassword}
         token={token}
       />
     </div>
