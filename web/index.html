@@ -170,7 +170,7 @@
   .table-row-hover:hover {
     background: var(--surface-hover);
   }
-  .print-only { display: none; }
+  .print-only { display: none !important; }
   @media print {
     @page { margin: 12mm 14mm; }
     aside, header, nav, .no-print, .dock-btn, select, input, button {
@@ -203,6 +203,9 @@
     .print-only {
       display: block !important;
     }
+    .print-only-flex {
+      display: flex !important;
+    }
     table {
       width: 100% !important;
       border-collapse: collapse !important;
@@ -234,7 +237,7 @@
 <div id="root"></div>
 
 <script type="text/babel" data-presets="react">
-const {useState, useMemo, useEffect, useCallback} = React;
+const {useState, useMemo, useEffect, useCallback, useRef} = React;
 
 const API = (location.port === "3000") ? "" : "http://127.0.0.1:3000";
 
@@ -2801,9 +2804,53 @@ function EmployeeProfile({emp, attendanceHistory, onBack, onDeactivate, onDelete
   );
 }
 
-function AttendancePage({attendance, departments, selectedDate, onDateChange}){
+function AttendancePage({attendance, departments, selectedDate, onDateChange, isLoading = false}){
   const [status, setStatus] = useState("all");
   const [dept, setDept] = useState("all");
+  const dateInputRef = useRef(null);
+
+  const todayStr = useMemo(() => new Date().toISOString().slice(0, 10), []);
+  const isToday = selectedDate === todayStr;
+
+  const stepDate = (offsetDays) => {
+    try {
+      const parts = selectedDate.split("-").map(Number);
+      const d = new Date(parts[0], parts[1] - 1, parts[2] + offsetDays);
+      const y = d.getFullYear();
+      const m = String(d.getMonth() + 1).padStart(2, "0");
+      const day = String(d.getDate()).padStart(2, "0");
+      onDateChange(`${y}-${m}-${day}`);
+    } catch (e) {
+      console.error("Error stepping date:", e);
+    }
+  };
+
+  const formattedDate = useMemo(() => {
+    try {
+      const parts = selectedDate.split("-").map(Number);
+      const d = new Date(parts[0], parts[1] - 1, parts[2]);
+      return d.toLocaleDateString(undefined, {
+        weekday: "short",
+        day: "numeric",
+        month: "short",
+        year: "numeric"
+      });
+    } catch (e) {
+      return selectedDate;
+    }
+  }, [selectedDate]);
+
+  const openCalendar = () => {
+    if (dateInputRef.current) {
+      if (typeof dateInputRef.current.showPicker === "function") {
+        try {
+          dateInputRef.current.showPicker();
+          return;
+        } catch (e) {}
+      }
+      dateInputRef.current.focus();
+    }
+  };
 
   const rows = attendance.filter(a => {
     let s = "absent";
@@ -2861,7 +2908,7 @@ function AttendancePage({attendance, departments, selectedDate, onDateChange}){
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", borderBottom: "2px solid #111827", paddingBottom: 10 }}>
           <div>
             <div style={{ fontSize: 18, fontWeight: 800, color: "#111827", letterSpacing: -0.3 }}>
-              ATTENDANCE & ACCESS CONTROL REPORT
+              ATTENDANCE &amp; ACCESS CONTROL REPORT
             </div>
             <div style={{ fontSize: 12, color: "#4b5563", marginTop: 2, fontWeight: 600 }}>
               Official Daily Verification Record
@@ -2896,8 +2943,125 @@ function AttendancePage({attendance, departments, selectedDate, onDateChange}){
           <option value="late">Late</option>
           <option value="absent">Absent</option>
         </select>
-        <input type="date" value={selectedDate} onChange={e=>onDateChange(e.target.value)}
-          style={{padding:"9px 12px", borderRadius:8, border:"1px solid var(--border)", background:"var(--surface-2)", color:"var(--text)", fontSize:13.5}}/>
+
+        {/* Interactive Working Calendar Date Control */}
+        <div style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+          <div style={{
+            display: "inline-flex",
+            alignItems: "center",
+            borderRadius: 8,
+            border: "1px solid var(--border)",
+            background: "var(--surface-2)",
+            overflow: "hidden"
+          }}>
+            <button
+              type="button"
+              onClick={() => stepDate(-1)}
+              title="Previous day"
+              style={{
+                background: "transparent",
+                border: "none",
+                borderRight: "1px solid var(--border)",
+                padding: "8px 9px",
+                color: "var(--text-dim)",
+                cursor: "pointer",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center"
+              }}
+            >
+              <Icon name="chevron-left" size={14} />
+            </button>
+
+            <div
+              onClick={openCalendar}
+              title="Click anywhere to open calendar"
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 8,
+                padding: "8px 12px",
+                cursor: "pointer",
+                position: "relative",
+                userSelect: "none"
+              }}
+            >
+              <Icon name="calendar" size={15} style={{ color: "var(--primary)", flexShrink: 0 }} />
+              <span style={{ fontSize: 13, fontWeight: 600, color: "var(--text)", whiteSpace: "nowrap" }}>
+                {formattedDate}
+              </span>
+              <input
+                ref={dateInputRef}
+                type="date"
+                value={selectedDate}
+                onChange={e => {
+                  if (e.target.value) {
+                    onDateChange(e.target.value);
+                  }
+                }}
+                style={{
+                  position: "absolute",
+                  left: 0,
+                  top: 0,
+                  width: "100%",
+                  height: "100%",
+                  opacity: 0,
+                  cursor: "pointer"
+                }}
+              />
+            </div>
+
+            <button
+              type="button"
+              onClick={() => stepDate(1)}
+              title="Next day"
+              style={{
+                background: "transparent",
+                border: "none",
+                borderLeft: "1px solid var(--border)",
+                padding: "8px 9px",
+                color: "var(--text-dim)",
+                cursor: "pointer",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center"
+              }}
+            >
+              <Icon name="chevron-right" size={14} />
+            </button>
+          </div>
+
+          {!isToday && (
+            <button
+              type="button"
+              onClick={() => onDateChange(todayStr)}
+              title="Jump to today's records"
+              style={{
+                padding: "7px 11px",
+                borderRadius: 7,
+                border: "1px solid var(--primary)",
+                background: "var(--primary-soft)",
+                color: "var(--primary)",
+                fontSize: 12,
+                fontWeight: 600,
+                cursor: "pointer",
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 4
+              }}
+            >
+              Today
+            </button>
+          )}
+
+          {isLoading && (
+            <div style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "5px 9px", borderRadius: 6, background: "var(--primary-soft)", color: "var(--primary)", fontSize: 12, fontWeight: 500 }}>
+              <Icon name="loader" size={13} />
+              <span>Fetching...</span>
+            </div>
+          )}
+        </div>
+
         <div style={{flex:1}}/>
         <Button variant="subtle" onClick={handleExportCSV} title="Download CSV spreadsheet">
           <Icon name="download" size={14}/> Export CSV
@@ -2913,8 +3077,14 @@ function AttendancePage({attendance, departments, selectedDate, onDateChange}){
             <Th>Employee ID</Th><Th>Name</Th><Th>Department</Th><Th>Date</Th><Th>Check-in</Th><Th>Check-out</Th><Th>Hours</Th><Th>Status</Th>
           </tr></thead>
           <tbody>
-            {rows.length === 0 ? (
-              <tr><Td colSpan={8} style={{textAlign:"center", color:"var(--text-dim)"}}>No attendance records found for this filter.</Td></tr>
+            {isLoading ? (
+              <tr><Td colSpan={8} style={{textAlign:"center", padding: "28px 12px", color:"var(--primary)"}}>
+                <div style={{display:"inline-flex", alignItems:"center", gap:8, fontWeight:500, fontSize:13.5}}>
+                  <Icon name="loader" size={16}/> Loading attendance records for {formattedDate}...
+                </div>
+              </Td></tr>
+            ) : rows.length === 0 ? (
+              <tr><Td colSpan={8} style={{textAlign:"center", padding: "28px 12px", color:"var(--text-dim)"}}>No attendance records found for this date and filter.</Td></tr>
             ) : (
               rows.map((a,i)=>{
                 const inTime = a.first_in ? new Date(a.first_in).toLocaleTimeString([], {hour:"2-digit", minute:"2-digit"}) : "—";
@@ -2942,15 +3112,43 @@ function AttendancePage({attendance, departments, selectedDate, onDateChange}){
         </table>
       </div>
 
-      {/* Screen Footer */}
-      <div className="no-print" style={{display:"flex", justifyContent:"space-between", alignItems:"center", padding:"12px 18px", fontSize:12.5, color:"var(--text-faint)"}}>
-        <span>Showing {rows.length} of {attendance.length} records</span>
+      {/* Screen Footer (Cleanly aligned inside the card container) */}
+      <div className="no-print" style={{
+        display: "flex",
+        justifyContent: "space-between",
+        alignItems: "center",
+        padding: "12px 18px",
+        borderTop: "1px solid var(--border)",
+        background: "var(--surface)",
+        fontSize: 12.5,
+        color: "var(--text-faint)"
+      }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <span>Showing <strong>{rows.length}</strong> of <strong>{attendance.length}</strong> records</span>
+          {isLoading && (
+            <span style={{ display: "inline-flex", alignItems: "center", gap: 4, color: "var(--primary)", fontSize: 11.5 }}>
+              <Icon name="loader" size={12} /> Updating...
+            </span>
+          )}
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11.5, color: "var(--text-dim)", fontWeight: 500 }}>
+          <Icon name="shield" size={13} style={{ color: "var(--text-faint)" }} />
+          <span>Official Attendance Record &bull; Confidential</span>
+        </div>
       </div>
 
-      {/* Print Footer */}
-      <div className="print-only" style={{ marginTop: 20, paddingTop: 8, borderTop: "1px solid #e5e7eb", display: "flex", justifyContent: "space-between", fontSize: 10, color: "#6b7280" }}>
-        <span>Official Attendance Record — Confidential</span>
-        <span>Generated by Access Control & Attendance System</span>
+      {/* Print Footer (Only shown when printing on paper / PDF) */}
+      <div className="print-only print-only-flex" style={{
+        marginTop: 24,
+        paddingTop: 10,
+        borderTop: "1.5px solid #111827",
+        justifyContent: "space-between",
+        alignItems: "center",
+        fontSize: 10,
+        color: "#4b5563"
+      }}>
+        <span>Official Attendance Record &mdash; Confidential</span>
+        <span>Generated by Access Control &amp; Attendance System</span>
       </div>
     </Card>
   );
@@ -4693,6 +4891,24 @@ function Shell(){
   const [holidays, setHolidays] = useState([]);
   const [rooms, setRooms] = useState([]);
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().slice(0,10));
+  const [isAttendanceLoading, setIsAttendanceLoading] = useState(false);
+
+  const handleDateChange = useCallback(async (newDate) => {
+    if (!newDate) return;
+    setSelectedDate(newDate);
+    if (!token) return;
+    setIsAttendanceLoading(true);
+    try {
+      const res = await apiCall("/api/attendance?date=" + newDate, "GET", null, token);
+      if (res && res.attendance) {
+        setAttendance(res.attendance);
+      }
+    } catch (err) {
+      console.error("Failed to load attendance for date:", newDate, err);
+    } finally {
+      setIsAttendanceLoading(false);
+    }
+  }, [token]);
 
   useEffect(()=>{
     const t = setInterval(()=> setNow(new Date()), 1000);
@@ -5254,7 +5470,8 @@ function Shell(){
               attendance={attendance}
               departments={departments}
               selectedDate={selectedDate}
-              onDateChange={setSelectedDate}
+              onDateChange={handleDateChange}
+              isLoading={isAttendanceLoading}
             />
           )}
           {page==="devices" && (
