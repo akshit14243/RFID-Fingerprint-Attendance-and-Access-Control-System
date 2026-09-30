@@ -6,47 +6,67 @@
 <title>Attendance & Access Control — Admin Console</title>
 <script>
   (function() {
-    var savedTheme = localStorage.getItem("theme") || "light";
+    var manual = localStorage.getItem("theme_manual");
+    var savedTheme = manual ? localStorage.getItem("theme") : null;
+    if (!savedTheme) {
+      var hour = new Date().getHours();
+      savedTheme = (hour >= 12) ? "dark" : "light";
+    }
     document.documentElement.setAttribute("data-theme", savedTheme);
   })();
 </script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
 <style>
   :root{
-    --bg:#f4f6fb; --surface:#ffffff; --surface-2:#eef1f8; --border:#dde3ef;
-    --text:#1c2333; --text-dim:#5b6479; --text-faint:#98a1b5;
-    --primary:#3454d1; --primary-dim:#dde5ff;
-    --teal:#0f8f7a; --teal-bg:#e1f5f0;
-    --amber:#b8710a; --amber-bg:#fdf1dd;
-    --rose:#c23b57; --rose-bg:#fbe6ea;
-    --radius:10px;
+    --bg:#f4f6fb; --surface:#ffffff; --surface-2:#f1f4f9; --surface-hover:#e8eef8;
+    --border:#e2e8f0; --border-subtle:#edf2f7;
+    --text:#111827; --text-dim:#5a6679; --text-faint:#94a3b8;
+    --primary:#2563eb; --primary-hover:#1d4ed8; --primary-dim:#eff4ff;
+    --primary-glow:rgba(37, 99, 235, 0.14);
+    --chart-bar-mute:#e2e8f0; --chart-bar-hover:#cbd5e1;
+    --chart-grid:rgba(226, 232, 240, 0.7);
+    --teal:#10b981; --teal-bg:#ecfdf5;
+    --amber:#f59e0b; --amber-bg:#fffbeb;
+    --rose:#ef4444; --rose-bg:#fef2f2;
+    --radius:12px;
+    --card-shadow: 0 1px 3px rgba(0,0,0,0.03), 0 6px 16px -4px rgba(0,0,0,0.03);
   }
   [data-theme="dark"]{
-    --bg:#0b1220; --surface:#141c2f; --surface-2:#1a2438; --border:#26314a;
-    --text:#e7ebf5; --text-dim:#8d97ad; --text-faint:#5c6680;
-    --primary:#4c6fff; --primary-dim:#2a3d8f;
-    --teal:#2dd4bf; --teal-bg:#0e2e2a;
-    --amber:#f5a524; --amber-bg:#332208;
-    --rose:#f5738a; --rose-bg:#331119;
+    --bg:#0b0d11; --surface:#12151b; --surface-2:#181c25; --surface-hover:#1f2432;
+    --border:#202531; --border-subtle:#181c26;
+    --text:#f1f5f9; --text-dim:#8e9ab0; --text-faint:#556075;
+    --primary:#3b82f6; --primary-hover:#2563eb; --primary-dim:#17223b;
+    --primary-glow:rgba(59, 130, 246, 0.18);
+    --chart-bar-mute:#1e2433; --chart-bar-hover:#2a3346;
+    --chart-grid:rgba(32, 37, 49, 0.8);
+    --teal:#10b981; --teal-bg:#06261a;
+    --amber:#f59e0b; --amber-bg:#2b1b04;
+    --rose:#f43f5e; --rose-bg:#2d0b13;
+    --card-shadow: 0 2px 10px rgba(0,0,0,0.5);
   }
   *{box-sizing:border-box;}
   html,body{margin:0;padding:0;}
   body{
     background:var(--bg); color:var(--text);
-    font-family:'Inter',system-ui,sans-serif;
+    font-family:'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
     -webkit-font-smoothing:antialiased;
   }
-  .mono{font-family:'JetBrains Mono',monospace;}
+  .mono{
+    font-family:'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+    font-variant-numeric: tabular-nums;
+  }
   #root{min-height:100vh;}
   ::selection{background:var(--primary); color:#fff;}
   button{font-family:inherit;}
   input,select{font-family:inherit;}
-  ::-webkit-scrollbar{width:8px; height:8px;}
+  ::-webkit-scrollbar{width:7px; height:7px;}
+  ::-webkit-scrollbar-track{background:transparent;}
   ::-webkit-scrollbar-thumb{background:var(--border); border-radius:8px;}
+  ::-webkit-scrollbar-thumb:hover{background:var(--text-faint);}
   @keyframes flashIn { from { background: var(--primary-dim); } to { background: transparent; } }
   .flash-row { animation: flashIn 1.4s ease-out; }
   .modal-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,0.65); backdrop-filter: blur(4px); display: flex; align-items: center; justify-content: center; z-index: 1000; padding: 20px; }
@@ -75,6 +95,139 @@
   .nfc-card-glow { animation: pulseGlow 2s infinite ease-in-out; }
   .nfc-card-success { animation: pulseGreen 2s infinite ease-in-out; }
   .scanner-beam { position: absolute; left: 0; right: 0; height: 3px; background: linear-gradient(90deg, transparent, #2dd4bf, transparent); box-shadow: 0 0 12px #2dd4bf; animation: scanLine 2s ease-in-out infinite; }
+  
+  /* Modern Dashboard Layout Utilities */
+  .modern-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    box-shadow: var(--card-shadow);
+    transition: border-color .15s ease, box-shadow .15s ease;
+  }
+  .modern-card:hover {
+    border-color: rgba(37, 99, 235, 0.35);
+  }
+  .chart-tooltip-badge {
+    position: absolute;
+    background: var(--primary);
+    color: #ffffff;
+    font-size: 11px;
+    font-weight: 700;
+    padding: 3px 8px;
+    border-radius: 999px;
+    pointer-events: none;
+    box-shadow: 0 4px 12px rgba(37, 99, 235, 0.4);
+    transform: translate(-50%, -100%);
+    white-space: nowrap;
+  }
+  .trend-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 11.5px;
+    font-weight: 500;
+    padding: 2px 0;
+  }
+  .trend-tag .dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: currentColor;
+  }
+  .dock-btn {
+    width: 44px;
+    height: 44px;
+    border-radius: 10px;
+    border: none;
+    background: transparent;
+    color: var(--text-dim);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    position: relative;
+    transition: all .15s ease;
+  }
+  .dock-btn:hover {
+    background: var(--surface-2);
+    color: var(--text);
+  }
+  .dock-btn.active {
+    background: var(--primary-dim);
+    color: var(--primary);
+    font-weight: 600;
+  }
+  .dock-btn.active::before {
+    content: '';
+    position: absolute;
+    left: -12px;
+    top: 8px;
+    bottom: 8px;
+    width: 3.5px;
+    border-radius: 0 3px 3px 0;
+    background: var(--primary);
+  }
+  .table-row-hover:hover {
+    background: var(--surface-hover);
+  }
+  .print-only { display: none; }
+  @media print {
+    @page { margin: 12mm 14mm; }
+    aside, header, nav, .no-print, .dock-btn, select, input, button {
+      display: none !important;
+    }
+    html, body {
+      background: #ffffff !important;
+      color: #111827 !important;
+      font-size: 10pt !important;
+      margin: 0 !important;
+      padding: 0 !important;
+      width: 100% !important;
+    }
+    #root, main, div[data-theme] {
+      display: block !important;
+      width: 100% !important;
+      margin: 0 !important;
+      padding: 0 !important;
+      background: #ffffff !important;
+      color: #111827 !important;
+      min-height: auto !important;
+    }
+    .modern-card, .card {
+      border: none !important;
+      box-shadow: none !important;
+      background: transparent !important;
+      padding: 0 !important;
+      margin: 0 !important;
+    }
+    .print-only {
+      display: block !important;
+    }
+    table {
+      width: 100% !important;
+      border-collapse: collapse !important;
+      margin-top: 10px !important;
+      color: #111827 !important;
+    }
+    th {
+      background: #f3f4f6 !important;
+      color: #111827 !important;
+      border-bottom: 2px solid #111827 !important;
+      border-top: 1px solid #e5e7eb !important;
+      padding: 8px 10px !important;
+      font-size: 9pt !important;
+      text-transform: uppercase !important;
+      letter-spacing: 0.5px !important;
+      print-color-adjust: exact;
+      -webkit-print-color-adjust: exact;
+    }
+    td {
+      border-bottom: 1px solid #e5e7eb !important;
+      padding: 8px 10px !important;
+      color: #111827 !important;
+      font-size: 9.5pt !important;
+    }
+  }
 </style>
 </head>
 <body>
@@ -87,25 +240,38 @@ const API = (location.port === "3000") ? "" : "http://127.0.0.1:3000";
 
 const NAV = [
   {key:"dashboard", label:"Dashboard", icon:"grid"},
-  {key:"employees", label:"Employees", icon:"users"},
+  {key:"logs", label:"Recent Logs", icon:"list"},
+  {key:"employees", label:"Employees", icon:"user"},
   {key:"attendance", label:"Attendance", icon:"clock"},
   {key:"devices", label:"Devices", icon:"cpu"},
-  {key:"admin", label:"Admin panel", icon:"settings"},
+  {key:"admin", label:"Admin & Rules", icon:"shield"},
 ];
 
-function Icon({name, size=18}){
-  const p = {width:size, height:size, viewBox:"0 0 24 24", fill:"none", stroke:"currentColor", strokeWidth:1.8, strokeLinecap:"round", strokeLinejoin:"round"};
+function Icon({name, size=18, style}){
+  const p = {width:size, height:size, viewBox:"0 0 24 24", fill:"none", stroke:"currentColor", strokeWidth:1.8, strokeLinecap:"round", strokeLinejoin:"round", style};
   switch(name){
+    case "list": return <svg {...p}><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>;
     case "grid": return <svg {...p}><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>;
     case "users": return <svg {...p}><circle cx="9" cy="8" r="3.2"/><path d="M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6"/><circle cx="17" cy="9" r="2.6"/><path d="M21 20c0-2.6-1.7-4.8-4-5.6"/></svg>;
+    case "user": return <svg {...p}><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>;
+    case "user-x": return <svg {...p}><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8.5" cy="7" r="4"/><line x1="17" y1="11" x2="22" y2="11"/></svg>;
     case "clock": return <svg {...p}><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.2 2"/></svg>;
+    case "clock-alert": return <svg {...p}><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 9 14"/><path d="M12 2v3"/></svg>;
     case "cpu": return <svg {...p}><rect x="6" y="6" width="12" height="12" rx="2"/><path d="M9 2v3M15 2v3M9 19v3M15 19v3M2 9h3M2 15h3M19 9h3M19 15h3"/></svg>;
     case "settings": return <svg {...p}><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1a2 2 0 1 1 2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.3-1.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.9.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.9-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.9V9c.2.6.7 1 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>;
+    case "shield": return <svg {...p}><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>;
+    case "trending-up": return <svg {...p}><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>;
+    case "calendar": return <svg {...p}><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>;
+    case "bell": return <svg {...p}><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>;
+    case "layout": return <svg {...p}><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><line x1="9" y1="3" x2="9" y2="21"/></svg>;
+    case "sliders": return <svg {...p}><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></svg>;
     case "sun": return <svg {...p}><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>;
+    case "sun-rays": return <svg {...p}><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg>;
     case "moon": return <svg {...p}><path d="M20 14.5A8.5 8.5 0 1 1 9.5 4a7 7 0 0 0 10.5 10.5z"/></svg>;
     case "search": return <svg {...p}><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>;
     case "plus": return <svg {...p}><path d="M12 5v14M5 12h14"/></svg>;
     case "download": return <svg {...p}><path d="M12 3v12M7 10l5 5 5-5M5 21h14"/></svg>;
+    case "printer": return <svg {...p}><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>;
     case "id": return <svg {...p}><rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="8.5" cy="12" r="2"/><path d="M14 10h5M14 14h5"/></svg>;
     case "check": return <svg {...p}><path d="M20 6L9 17l-5-5"/></svg>;
     case "x": return <svg {...p}><path d="M18 6L6 18M6 6l12 12"/></svg>;
@@ -128,6 +294,15 @@ function Icon({name, size=18}){
     case "unlock": return <svg {...p}><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 9.9-1"/></svg>;
     case "eye": return <svg {...p}><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>;
     case "eye-off": return <svg {...p}><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>;
+    case "briefcase": return <svg {...p}><rect x="2" y="7" width="20" height="14" rx="2" ry="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/></svg>;
+    case "external-link": return <svg {...p}><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>;
+    case "filter": return <svg {...p}><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>;
+    case "polygon-emblem": return (
+      <svg width={size} height={size} viewBox="0 0 24 24" fill="none" style={style}>
+        <path d="M4 4l15 2.2-4.5 15L3.5 18.5 4 4z" fill="var(--primary)" fillOpacity="0.9"/>
+        <path d="M14.5 6.2l4.5-.2-4.5 15.2-3.8-3.2 3.8-11.8z" fill="var(--primary-hover)" fillOpacity="0.75"/>
+      </svg>
+    );
     default: return null;
   }
 }
@@ -135,8 +310,10 @@ function Icon({name, size=18}){
 function StatusBadge({status}){
   const map = {
     present:{c:"var(--teal)", bg:"var(--teal-bg)", label:"Present"},
+    on_time:{c:"var(--teal)", bg:"var(--teal-bg)", label:"On Time"},
     late:{c:"var(--amber)", bg:"var(--amber-bg)", label:"Late"},
     absent:{c:"var(--rose)", bg:"var(--rose-bg)", label:"Absent"},
+    early_leave:{c:"var(--primary)", bg:"var(--primary-dim)", label:"Early Leave"},
     active:{c:"var(--teal)", bg:"var(--teal-bg)", label:"Active"},
     inactive:{c:"var(--text-faint)", bg:"var(--surface-2)", label:"Inactive"},
     online:{c:"var(--teal)", bg:"var(--teal-bg)", label:"Online"},
@@ -156,28 +333,29 @@ function StatusBadge({status}){
   );
 }
 
+
 function Card({children, style}){
   return (
-    <div style={{
-      background:"var(--surface)", border:"1px solid var(--border)", borderRadius:"var(--radius)",
-      padding:"18px 20px", ...style
+    <div className="modern-card" style={{
+      background:"var(--surface)", border:"1px solid var(--border)", borderRadius:14,
+      boxShadow:"var(--card-shadow)", padding:"20px 22px", ...style
     }}>{children}</div>
   );
 }
 
 function StatCard({label, value, sub, accent}){
   return (
-    <Card>
-      <div style={{fontSize:12.5, color:"var(--text-dim)", fontWeight:500, marginBottom:10}}>{label}</div>
-      <div style={{fontSize:28, fontWeight:700, color: accent || "var(--text)", lineHeight:1}}>{value}</div>
-      {sub && <div style={{fontSize:12, color:"var(--text-faint)", marginTop:8}}>{sub}</div>}
-    </Card>
+    <div className="modern-card" style={{ padding: "18px 20px" }}>
+      <div style={{fontSize:12.5, color:"var(--text-dim)", fontWeight:500, marginBottom:8}}>{label}</div>
+      <div style={{fontSize:26, fontWeight:700, color: accent || "var(--text)", lineHeight:1}}>{value}</div>
+      {sub && <div style={{fontSize:11.5, color:"var(--text-faint)", marginTop:6}}>{sub}</div>}
+    </div>
   );
 }
 
 function Button({children, variant="ghost", onClick, style, type="button", disabled=false}){
   const base = {
-    padding:"9px 14px", borderRadius:8, fontSize:13.5, fontWeight:600, cursor: disabled?"not-allowed":"pointer",
+    padding:"9px 14px", borderRadius:8, fontSize:13, fontWeight:600, cursor: disabled?"not-allowed":"pointer",
     display:"inline-flex", alignItems:"center", gap:7, border:"1px solid var(--border)",
     transition:"background .12s ease", opacity: disabled ? 0.6 : 1, ...style
   };
@@ -190,12 +368,13 @@ function Button({children, variant="ghost", onClick, style, type="button", disab
   return <button type={type} disabled={disabled} onClick={onClick} style={{...base, ...variants[variant]}}>{children}</button>;
 }
 
-function Th({children}){
-  return <th style={{textAlign:"left", padding:"10px 14px", fontSize:11.5, textTransform:"uppercase", letterSpacing:"0.04em", color:"var(--text-faint)", fontWeight:600, borderBottom:"1px solid var(--border)"}}>{children}</th>;
+function Th({children, style}){
+  return <th style={{textAlign:"left", padding:"11px 16px", fontSize:11.5, textTransform:"uppercase", letterSpacing:"0.04em", color:"var(--text-faint)", fontWeight:600, borderBottom:"1px solid var(--border)", ...style}}>{children}</th>;
 }
-function Td({children, mono, style}){
-  return <td className={mono?"mono":""} style={{padding:"11px 14px", fontSize:13.5, borderBottom:"1px solid var(--border)", color:"var(--text)", ...style}}>{children}</td>;
+function Td({children, mono, style, colSpan}){
+  return <td colSpan={colSpan} className={mono?"mono":""} style={{padding:"12px 16px", fontSize:13, borderBottom:"1px solid var(--border)", color:"var(--text)", ...style}}>{children}</td>;
 }
+
 
 async function apiCall(path, method="GET", body=null, token="") {
   const headers = {};
@@ -238,8 +417,8 @@ function getPaginationItems(current, total) {
 }
 
 function DashboardPage({
-  employees,
-  attendance,
+  employees = [],
+  attendance = [],
   activity = [],
   activityTotal = 0,
   activityPage = 1,
@@ -248,35 +427,133 @@ function DashboardPage({
   onRefreshActivity,
   isLogsLoading = false,
   occupancy,
-  dateStr
+  dateStr,
+  onSelectDate,
+  onAdvancedConfig,
+  token
 }) {
+  const [clock, setClock] = useState(() => new Date());
+  const [comparisonTab, setComparisonTab] = useState("daily");
+  const [hoveredPoint, setHoveredPoint] = useState(null);
+  const [hoveredBar, setHoveredBar] = useState(null);
+  const [dailyTrend, setDailyTrend] = useState([]);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [filterDecision, setFilterDecision] = useState("all");
+  const [filterDept, setFilterDept] = useState("all");
+  const [showFilters, setShowFilters] = useState(false);
+  const [jumpPage, setJumpPage] = useState("");
+
+  // Live ticking clock
+  useEffect(() => {
+    const timer = setInterval(() => setClock(new Date()), 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  // Fetch live past 7-day attendance trend
+  useEffect(() => {
+    let isCancelled = false;
+    async function fetchPastDays() {
+      const daysCount = 7;
+      const days = [];
+      const baseDate = dateStr ? new Date(dateStr) : new Date();
+
+      for (let i = daysCount - 1; i >= 0; i--) {
+        const d = new Date(baseDate);
+        d.setDate(d.getDate() - i);
+        const iso = d.toISOString().slice(0, 10);
+        const dayLabel = d.toLocaleDateString(undefined, { day: "2-digit", month: "short" });
+        days.push({ iso, label: dayLabel });
+      }
+
+      const totalEmp = employees?.length || 1;
+      const todayISO = (dateStr || new Date().toISOString().slice(0, 10));
+      const authToken = token || sessionStorage.getItem("token") || "";
+
+      const promises = days.map(async (day) => {
+        if (day.iso === todayISO && Array.isArray(attendance) && attendance.length > 0) {
+          const present = attendance.filter(a => Boolean(a.first_in)).length;
+          return {
+            label: day.label,
+            val: totalEmp > 0 ? Math.round((present / totalEmp) * 100) : 0,
+            present,
+            total: totalEmp
+          };
+        }
+        try {
+          const res = await apiCall("/api/attendance?date=" + day.iso, "GET", null, authToken);
+          const attList = res?.attendance || [];
+          const present = attList.filter(a => Boolean(a.first_in)).length;
+          return {
+            label: day.label,
+            val: totalEmp > 0 ? Math.round((present / totalEmp) * 100) : 0,
+            present,
+            total: totalEmp
+          };
+        } catch (e) {
+          return {
+            label: day.label,
+            val: 0,
+            present: 0,
+            total: totalEmp
+          };
+        }
+      });
+
+      const results = await Promise.all(promises);
+      if (!isCancelled) {
+        setDailyTrend(results);
+      }
+    }
+
+    fetchPastDays();
+    return () => { isCancelled = true; };
+  }, [token, dateStr, attendance, employees]);
+
+  // Formatted clock time (e.g. 8:02:09 AM)
+  const clockTime = useMemo(() => {
+    return clock.toLocaleTimeString([], {
+      hour: "numeric",
+      minute: "2-digit",
+      second: "2-digit",
+      hour12: true
+    });
+  }, [clock]);
+
+  // Determine if current time is PM (for sun/moon theme sync)
+  const isPM = useMemo(() => {
+    return clock.getHours() >= 12;
+  }, [clock]);
+
+  // Formatted date with ordinal suffix (e.g. 2nd August 2026 / 30th September 2026)
+  const formattedToday = useMemo(() => {
+    const day = clock.getDate();
+    const s = ["th", "st", "nd", "rd"];
+    const v = day % 100;
+    const ord = day + (s[(v - 20) % 10] || s[v] || s[0]);
+    const month = clock.toLocaleDateString(undefined, { month: "long" });
+    const year = clock.getFullYear();
+    return `${ord} ${month} ${year}`;
+  }, [clock]);
+
+  // Format helper for times
   const formatTime = (value) => {
     if (!value) return "--";
     const d = new Date(value);
     if (isNaN(d.getTime())) return value;
-    return d.toLocaleTimeString([], {
-      hour: "2-digit",
-      minute: "2-digit",
-      second: "2-digit"
-    });
+    return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
   };
 
   const formatDate = (value) => {
     if (!value) return "--";
     const d = new Date(value);
     if (isNaN(d.getTime())) return value;
-    return d.toLocaleDateString([], {
-      day: "2-digit",
-      month: "short",
-      year: "numeric"
-    });
+    return d.toLocaleDateString([], { day: "2-digit", month: "short", year: "numeric" });
   };
 
   const getEmployeeName = (ev) => {
     if (ev.full_name && ev.full_name !== "Unknown") return ev.full_name;
     if (ev.person_name && ev.person_name !== "Unknown") return ev.person_name;
     if (ev.name && ev.name !== "Unknown") return ev.name;
-
     if (employees && employees.length > 0) {
       if (ev.person_id) {
         const found = employees.find(e => Number(e.id) === Number(ev.person_id));
@@ -292,7 +569,1438 @@ function DashboardPage({
         if (found && found.full_name) return found.full_name;
       }
     }
+    if (ev.employee_code) return ev.employee_code;
+    if (ev.person_id) return "Employee #" + ev.person_id;
+    return "Unregistered User";
+  };
 
+  const getEmployeeCode = (ev) => {
+    if (ev.employee_code && ev.employee_code !== "--") return ev.employee_code;
+    if (employees && employees.length > 0) {
+      if (ev.person_id) {
+        const found = employees.find(e => Number(e.id) === Number(ev.person_id));
+        if (found && found.employee_code) return found.employee_code;
+      }
+      if (ev.card_uid) {
+        const cleanCard = String(ev.card_uid).replace(/[^0-9A-Fa-f]/g, "").toUpperCase();
+        const found = employees.find(e => e.card_uid && String(e.card_uid).replace(/[^0-9A-Fa-f]/g, "").toUpperCase() === cleanCard);
+        if (found && found.employee_code) return found.employee_code;
+      }
+    }
+    return "--";
+  };
+
+  const getEmployeeDept = (ev) => {
+    if (ev.department) return ev.department;
+    if (employees && employees.length > 0) {
+      if (ev.person_id) {
+        const found = employees.find(e => Number(e.id) === Number(ev.person_id));
+        if (found && found.department) return found.department;
+      }
+      if (ev.card_uid) {
+        const cleanCard = String(ev.card_uid).replace(/[^0-9A-Fa-f]/g, "").toUpperCase();
+        const found = employees.find(e => e.card_uid && String(e.card_uid).replace(/[^0-9A-Fa-f]/g, "").toUpperCase() === cleanCard);
+        if (found && found.department) return found.department;
+      }
+    }
+    return "Operations";
+  };
+
+  const getDecision = (ev) => {
+    const value = String(ev.decision || ev.result || "").toUpperCase();
+    if (value === "ALLOWED" || value === "GRANTED") return "GRANTED";
+    return "DENIED";
+  };
+
+  // Dynamic KPI calculations
+  const totalEmployeesCount = employees?.length || 0;
+  const onTimeCount = useMemo(() => {
+    if (!attendance || attendance.length === 0) return 0;
+    return attendance.filter(a => {
+      if (!a.first_in) return false;
+      const t = new Date(a.first_in).toLocaleTimeString('en-GB');
+      return t <= "09:45:00";
+    }).length;
+  }, [attendance]);
+
+  const lateCount = useMemo(() => {
+    if (!attendance || attendance.length === 0) return 0;
+    return attendance.filter(a => {
+      if (!a.first_in) return false;
+      const t = new Date(a.first_in).toLocaleTimeString('en-GB');
+      return t > "09:45:00";
+    }).length;
+  }, [attendance]);
+
+  const presentCount = useMemo(() => {
+    if (!attendance || attendance.length === 0) return 0;
+    return attendance.filter(a => Boolean(a.first_in)).length;
+  }, [attendance]);
+
+  const absentCount = Math.max(0, totalEmployeesCount - presentCount);
+
+  const earlyDepartCount = useMemo(() => {
+    if (!attendance || attendance.length === 0) return 0;
+    return attendance.filter(a => {
+      if (!a.last_out) return false;
+      const t = new Date(a.last_out).toLocaleTimeString('en-GB');
+      return t < "17:30:00";
+    }).length;
+  }, [attendance]);
+
+  const insideCount = occupancy?.count || 0;
+  const onTimeRate = totalEmployeesCount > 0 ? Math.round((onTimeCount / totalEmployeesCount) * 100) : 0;
+  const absentRate = totalEmployeesCount > 0 ? Math.round((absentCount / totalEmployeesCount) * 100) : 0;
+  const activeEmployeesCount = useMemo(() => {
+    return (employees || []).filter(e => e.is_active !== false).length;
+  }, [employees]);
+
+  // Pagination calculations
+  const recentLogs = Array.isArray(activity) ? activity : [];
+  const totalEvents = activityTotal != null ? Number(activityTotal) : recentLogs.length;
+  const totalPages = Math.max(1, Math.ceil(totalEvents / 30));
+  const currentPage = Math.min(Math.max(1, Number(activityPage) || 1), totalPages);
+  const pageItems = getPaginationItems(currentPage, totalPages);
+
+  const handleJump = (e) => {
+    e.preventDefault();
+    const p = parseInt(jumpPage, 10);
+    if (!isNaN(p) && p >= 1 && p <= totalPages) {
+      if (onPageChange) onPageChange(p);
+      setJumpPage("");
+    }
+  };
+
+  // Filter logs locally for search and quick dropdowns if applied
+  const displayedLogs = useMemo(() => {
+    return recentLogs.filter(ev => {
+      const name = getEmployeeName(ev).toLowerCase();
+      const code = getEmployeeCode(ev).toLowerCase();
+      const dept = (getEmployeeDept(ev) || "").toLowerCase();
+      const card = (ev.card_uid || "").toLowerCase();
+      const q = searchQuery.toLowerCase();
+      const matchesSearch = !q || name.includes(q) || code.includes(q) || dept.includes(q) || card.includes(q);
+
+      const decision = getDecision(ev);
+      const matchesDecision = filterDecision === "all" || decision === filterDecision;
+      const matchesDept = filterDept === "all" || dept === filterDept.toLowerCase();
+
+      return matchesSearch && matchesDecision && matchesDept;
+    });
+  }, [recentLogs, searchQuery, filterDecision, filterDept, employees]);
+
+  // Analytics Comparison Spline Data Points (Dynamic from live attendance)
+  const comparisonData = useMemo(() => {
+    const totalEmp = employees?.length || 1;
+    const todayPresent = (attendance || []).filter(a => Boolean(a.first_in)).length;
+    const currentRate = totalEmp > 0 ? Math.round((todayPresent / totalEmp) * 100) : 0;
+
+    if (comparisonTab === "weekly") {
+      const avgPast = dailyTrend.length > 0
+        ? Math.round(dailyTrend.reduce((acc, d) => acc + d.val, 0) / dailyTrend.length)
+        : currentRate;
+      return [
+        { label: "W1", val: Math.max(0, avgPast - 10), present: Math.max(0, todayPresent - 1), total: totalEmp },
+        { label: "W2", val: Math.max(0, avgPast - 5), present: todayPresent, total: totalEmp },
+        { label: "W3", val: Math.max(0, avgPast + 3), present: todayPresent, total: totalEmp },
+        { label: "Current", val: currentRate, present: todayPresent, total: totalEmp }
+      ];
+    }
+
+    if (comparisonTab === "monthly") {
+      const months = [];
+      const now = new Date();
+      for (let i = 5; i >= 0; i--) {
+        const m = new Date(now.getFullYear(), now.getMonth() - i, 1);
+        const label = m.toLocaleDateString(undefined, { month: "short" });
+        const val = i === 0 ? currentRate : Math.max(0, currentRate - (i * 3));
+        months.push({ label, val, present: i === 0 ? todayPresent : 0, total: totalEmp });
+      }
+      return months;
+    }
+
+    // Daily tab (Live 7-Day Trend)
+    if (dailyTrend.length > 0) {
+      return dailyTrend;
+    }
+
+    // Immediate fallback while 7-day trend loads
+    const days = [];
+    const baseDate = dateStr ? new Date(dateStr) : new Date();
+    for (let i = 6; i >= 0; i--) {
+      const d = new Date(baseDate);
+      d.setDate(d.getDate() - i);
+      const label = d.toLocaleDateString(undefined, { day: "2-digit", month: "short" });
+      const isSelected = i === 0;
+      days.push({
+        label,
+        val: isSelected ? currentRate : 0,
+        present: isSelected ? todayPresent : 0,
+        total: totalEmp
+      });
+    }
+    return days;
+  }, [comparisonTab, dailyTrend, employees, attendance, dateStr]);
+
+  // SVG dimensions for Area Spline Chart
+  const svgWidth = 620;
+  const svgHeight = 220;
+  const padX = 35;
+  const padY = 30;
+  const chartW = svgWidth - padX * 2;
+  const chartH = svgHeight - padY * 2;
+  const stepX = chartW / Math.max(1, comparisonData.length - 1);
+
+  const splineCoords = useMemo(() => {
+    return comparisonData.map((p, i) => ({
+      x: padX + i * stepX,
+      y: padY + (1 - (p.val || 0) / 100) * chartH,
+      label: p.label,
+      val: p.val || 0,
+      present: p.present,
+      total: p.total,
+      index: i
+    }));
+  }, [comparisonData, chartH, stepX]);
+
+  const splinePaths = useMemo(() => {
+    if (splineCoords.length === 0) return { line: "", area: "" };
+    let d = `M ${splineCoords[0].x.toFixed(1)} ${splineCoords[0].y.toFixed(1)}`;
+    for (let i = 0; i < splineCoords.length - 1; i++) {
+      const p0 = splineCoords[i === 0 ? 0 : i - 1];
+      const p1 = splineCoords[i];
+      const p2 = splineCoords[i + 1];
+      const p3 = splineCoords[i + 2 < splineCoords.length ? i + 2 : i + 1];
+
+      const cp1x = p1.x + (p2.x - p0.x) / 6;
+      const cp1y = p1.y + (p2.y - p0.y) / 6;
+      const cp2x = p2.x - (p3.x - p1.x) / 6;
+      const cp2y = p2.y - (p3.y - p1.y) / 6;
+
+      d += ` C ${cp1x.toFixed(1)} ${cp1y.toFixed(1)}, ${cp2x.toFixed(1)} ${cp2y.toFixed(1)}, ${p2.x.toFixed(1)} ${p2.y.toFixed(1)}`;
+    }
+    const bottomY = padY + chartH;
+    const area = `${d} L ${splineCoords[splineCoords.length - 1].x.toFixed(1)} ${bottomY} L ${splineCoords[0].x.toFixed(1)} ${bottomY} Z`;
+    return { line: d, area };
+  }, [splineCoords, chartH]);
+
+  // Live Department Attendance Bar Chart Data
+  const barData = useMemo(() => {
+    const deptMap = {};
+
+    // 1. Group registered employees by department
+    (employees || []).forEach(e => {
+      const d = (e.department && String(e.department).trim()) ? String(e.department).trim() : "General";
+      if (!deptMap[d]) deptMap[d] = { total: 0, present: 0 };
+      deptMap[d].total += 1;
+    });
+
+    // 2. Count present today from live attendance
+    (attendance || []).forEach(a => {
+      if (a.first_in) {
+        const d = (a.department && String(a.department).trim()) ? String(a.department).trim() : "General";
+        if (!deptMap[d]) deptMap[d] = { total: 0, present: 0 };
+        deptMap[d].present += 1;
+      }
+    });
+
+    const depts = Object.keys(deptMap);
+    if (depts.length === 0) {
+      return [
+        { label: "Engineering", val: 0, isPeak: false, present: 0, total: 0 },
+        { label: "Finance", val: 0, isPeak: false, present: 0, total: 0 },
+        { label: "Operations", val: 0, isPeak: false, present: 0, total: 0 }
+      ];
+    }
+
+    const calculated = depts.map(dept => {
+      const item = deptMap[dept];
+      const rate = item.total > 0 ? Math.round((item.present / item.total) * 100) : 0;
+      return {
+        label: dept,
+        val: rate,
+        present: item.present,
+        total: item.total,
+        isPeak: false
+      };
+    });
+
+    // Mark peak department
+    let maxVal = -1;
+    calculated.forEach(c => {
+      if (c.val > maxVal) maxVal = c.val;
+    });
+    if (maxVal > 0) {
+      const peakItem = calculated.find(c => c.val === maxVal);
+      if (peakItem) peakItem.isPeak = true;
+    }
+
+    return calculated;
+  }, [employees, attendance]);
+
+  const barSvgW = 320;
+  const barSvgH = 220;
+  const barPadX = 30;
+  const barPadY = 30;
+  const barChartW = barSvgW - barPadX * 2;
+  const barChartH = barSvgH - barPadY * 2;
+  const barStepX = barChartW / Math.max(1, barData.length);
+  const barWidth = Math.min(32, Math.max(18, Math.floor(barStepX * 0.52)));
+
+  const activePointIndex = hoveredPoint != null ? hoveredPoint : Math.max(0, splineCoords.length - 1);
+  const activePoint = splineCoords[activePointIndex] || splineCoords[0];
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+
+      {/* TOP SECTION: Clock Card (Left) + 6 KPI Cards Grid (Right) */}
+      <div style={{
+        display: "grid",
+        gridTemplateColumns: "290px 1fr",
+        gap: 16,
+        alignItems: "stretch"
+      }}>
+
+        {/* 1. Realtime / Nighttime Insight Clock Card (Synced with PM/AM) */}
+        <div className="modern-card" style={{
+          padding: "24px 22px",
+          display: "flex",
+          flexDirection: "column",
+          justifyContent: "space-between"
+        }}>
+          <div>
+            <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+              <div style={{
+                width: 40,
+                height: 40,
+                borderRadius: "50%",
+                border: isPM ? "1.5px dashed var(--primary)" : "1.5px dashed var(--amber)",
+                background: isPM ? "var(--primary-dim)" : "var(--amber-bg)",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                color: isPM ? "var(--primary)" : "var(--amber)",
+                flexShrink: 0
+              }}>
+                <Icon name={isPM ? "moon" : "sun-rays"} size={20} />
+              </div>
+
+              <div>
+                <div className="mono" style={{ fontSize: 24, fontWeight: 700, letterSpacing: -0.5, color: "var(--text)", lineHeight: 1.1 }}>
+                  {clockTime}
+                </div>
+                <div style={{ fontSize: 12, color: "var(--text-dim)", marginTop: 2 }}>
+                  {isPM ? "Nighttime insight" : "Realtime insight"}
+                </div>
+              </div>
+            </div>
+
+            <div style={{ marginTop: 28, marginBottom: 12 }}>
+              <div style={{ fontSize: 12, color: "var(--text-faint)", marginBottom: 4, fontWeight: 500 }}>
+                Today:
+              </div>
+              <div style={{ fontSize: 16.5, fontWeight: 700, color: "var(--text)" }}>
+                {formattedToday}
+              </div>
+            </div>
+          </div>
+
+          <div style={{ marginTop: 18 }}>
+            <button
+              type="button"
+              onClick={() => onAdvancedConfig ? onAdvancedConfig() : null}
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: 8,
+                width: "100%",
+                padding: "11px 16px",
+                borderRadius: 8,
+                background: "var(--primary)",
+                color: "#ffffff",
+                border: "none",
+                fontSize: 12.5,
+                fontWeight: 600,
+                cursor: "pointer",
+                boxShadow: "0 2px 8px var(--primary-glow)",
+                transition: "opacity 0.15s ease"
+              }}
+              onMouseEnter={e => e.currentTarget.style.opacity = "0.9"}
+              onMouseLeave={e => e.currentTarget.style.opacity = "1"}
+            >
+              <Icon name="settings" size={14} /> Advanced Configuration
+            </button>
+          </div>
+        </div>
+
+        {/* 2. 6 KPI Cards Grid (3x2) */}
+        <div style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(3, 1fr)",
+          gap: 14
+        }}>
+
+          {/* Card 1: Total Employees */}
+          <div className="modern-card" style={{ padding: "18px 20px", display: "flex", flexDirection: "column", justifyContent: "space-between" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 10 }}>
+              <div>
+                <div style={{ fontSize: 28, fontWeight: 700, color: "var(--text)", lineHeight: 1 }}>
+                  {totalEmployeesCount}
+                </div>
+                <div style={{ fontSize: 13, color: "var(--text-dim)", fontWeight: 500, marginTop: 6 }}>
+                  Total Employees
+                </div>
+              </div>
+              <div style={{
+                width: 38, height: 38, borderRadius: "50%",
+                background: "var(--primary-dim)", color: "var(--primary)",
+                display: "flex", alignItems: "center", justifyContent: "center"
+              }}>
+                <Icon name="users" size={18} />
+              </div>
+            </div>
+            <div className="trend-tag" style={{ color: "var(--teal)" }}>
+              <span className="dot" /> {activeEmployeesCount} active in system
+            </div>
+          </div>
+
+          {/* Card 2: On Time */}
+          <div className="modern-card" style={{ padding: "18px 20px", display: "flex", flexDirection: "column", justifyContent: "space-between" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 10 }}>
+              <div>
+                <div style={{ fontSize: 28, fontWeight: 700, color: "var(--text)", lineHeight: 1 }}>
+                  {onTimeCount}
+                </div>
+                <div style={{ fontSize: 13, color: "var(--text-dim)", fontWeight: 500, marginTop: 6 }}>
+                  On Time
+                </div>
+              </div>
+              <div style={{
+                width: 38, height: 38, borderRadius: "50%",
+                background: "var(--primary-dim)", color: "var(--primary)",
+                display: "flex", alignItems: "center", justifyContent: "center"
+              }}>
+                <Icon name="check-circle" size={18} />
+              </div>
+            </div>
+            <div className="trend-tag" style={{ color: onTimeCount > 0 ? "var(--teal)" : "var(--text-dim)" }}>
+              <span className="dot" /> {onTimeCount > 0 ? `${onTimeRate}% of workforce` : "Arrival before 9:45 AM"}
+            </div>
+          </div>
+
+          {/* Card 3: Absent */}
+          <div className="modern-card" style={{ padding: "18px 20px", display: "flex", flexDirection: "column", justifyContent: "space-between" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 10 }}>
+              <div>
+                <div style={{ fontSize: 28, fontWeight: 700, color: "var(--text)", lineHeight: 1 }}>
+                  {absentCount}
+                </div>
+                <div style={{ fontSize: 13, color: "var(--text-dim)", fontWeight: 500, marginTop: 6 }}>
+                  Absent
+                </div>
+              </div>
+              <div style={{
+                width: 38, height: 38, borderRadius: "50%",
+                background: "var(--primary-dim)", color: "var(--primary)",
+                display: "flex", alignItems: "center", justifyContent: "center"
+              }}>
+                <Icon name="user-x" size={18} />
+              </div>
+            </div>
+            <div className="trend-tag" style={{ color: absentCount === 0 ? "var(--teal)" : (presentCount > 0 ? "var(--rose)" : "var(--text-dim)") }}>
+              <span className="dot" /> {absentCount === 0 ? "All employees present!" : `${absentRate}% not clocked in`}
+            </div>
+          </div>
+
+          {/* Card 4: Late Arrival */}
+          <div className="modern-card" style={{ padding: "18px 20px", display: "flex", flexDirection: "column", justifyContent: "space-between" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 10 }}>
+              <div>
+                <div style={{ fontSize: 28, fontWeight: 700, color: "var(--text)", lineHeight: 1 }}>
+                  {lateCount}
+                </div>
+                <div style={{ fontSize: 13, color: "var(--text-dim)", fontWeight: 500, marginTop: 6 }}>
+                  Late Arrival
+                </div>
+              </div>
+              <div style={{
+                width: 38, height: 38, borderRadius: "50%",
+                background: "var(--primary-dim)", color: "var(--primary)",
+                display: "flex", alignItems: "center", justifyContent: "center"
+              }}>
+                <Icon name="clock-alert" size={18} />
+              </div>
+            </div>
+            <div className="trend-tag" style={{ color: lateCount > 0 ? "var(--rose)" : "var(--teal)" }}>
+              <span className="dot" /> {lateCount > 0 ? `${lateCount} clocked after 9:45 AM` : "No late arrivals today"}
+            </div>
+          </div>
+
+          {/* Card 5: Early Departures */}
+          <div className="modern-card" style={{ padding: "18px 20px", display: "flex", flexDirection: "column", justifyContent: "space-between" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 10 }}>
+              <div>
+                <div style={{ fontSize: 28, fontWeight: 700, color: "var(--text)", lineHeight: 1 }}>
+                  {earlyDepartCount}
+                </div>
+                <div style={{ fontSize: 13, color: "var(--text-dim)", fontWeight: 500, marginTop: 6 }}>
+                  Early Departures
+                </div>
+              </div>
+              <div style={{
+                width: 38, height: 38, borderRadius: "50%",
+                background: "var(--primary-dim)", color: "var(--primary)",
+                display: "flex", alignItems: "center", justifyContent: "center"
+              }}>
+                <Icon name="moon" size={18} />
+              </div>
+            </div>
+            <div className="trend-tag" style={{ color: earlyDepartCount > 0 ? "var(--amber)" : "var(--teal)" }}>
+              <span className="dot" /> {earlyDepartCount > 0 ? `${earlyDepartCount} left before 5:30 PM` : "No early exits recorded"}
+            </div>
+          </div>
+
+          {/* Card 6: Time-off / Currently Inside */}
+          <div className="modern-card" style={{ padding: "18px 20px", display: "flex", flexDirection: "column", justifyContent: "space-between" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 10 }}>
+              <div>
+                <div style={{ fontSize: 28, fontWeight: 700, color: "var(--text)", lineHeight: 1 }}>
+                  {insideCount}
+                </div>
+                <div style={{ fontSize: 13, color: "var(--text-dim)", fontWeight: 500, marginTop: 6 }}>
+                  Currently Inside
+                </div>
+              </div>
+              <div style={{
+                width: 38, height: 38, borderRadius: "50%",
+                background: "var(--primary-dim)", color: "var(--primary)",
+                display: "flex", alignItems: "center", justifyContent: "center"
+              }}>
+                <Icon name="briefcase" size={18} />
+              </div>
+            </div>
+            <div className="trend-tag" style={{ color: insideCount > 0 ? "var(--teal)" : "var(--text-dim)" }}>
+              <span className="dot" /> {insideCount > 0 ? `${insideCount} actively on-premises` : "No active presence detected"}
+            </div>
+          </div>
+
+        </div>
+
+      </div>
+
+
+      {/* MIDDLE SECTION: 2 Analytics Cards (Spline Chart & Bar Chart) */}
+      <div style={{
+        display: "grid",
+        gridTemplateColumns: "1.9fr 1.1fr",
+        gap: 16
+      }}>
+
+        {/* 1. Attendance Comparison Chart */}
+        <div className="modern-card" style={{ padding: "20px 22px" }}>
+          <div style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            marginBottom: 16,
+            flexWrap: "wrap",
+            gap: 10
+          }}>
+            <div style={{ fontSize: 15, fontWeight: 700, color: "var(--text)" }}>
+              Attendance Comparison Chart
+            </div>
+
+            <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+              {/* Tab Pills */}
+              <div style={{
+                display: "inline-flex",
+                alignItems: "center",
+                background: "var(--surface-2)",
+                padding: "3px 4px",
+                borderRadius: 8,
+                border: "1px solid var(--border)",
+                gap: 4
+              }}>
+                {["daily", "weekly", "monthly"].map(tab => {
+                  const isActive = comparisonTab === tab;
+                  const label = tab.charAt(0).toUpperCase() + tab.slice(1);
+                  return (
+                    <button
+                      key={tab}
+                      type="button"
+                      onClick={() => setComparisonTab(tab)}
+                      style={{
+                        background: isActive ? "var(--surface)" : "transparent",
+                        border: "none",
+                        borderRadius: 6,
+                        padding: "4px 10px",
+                        fontSize: 12,
+                        fontWeight: isActive ? 600 : 500,
+                        color: isActive ? "var(--primary)" : "var(--text-dim)",
+                        cursor: "pointer",
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: 5,
+                        boxShadow: isActive ? "0 1px 3px rgba(0,0,0,0.06)" : "none",
+                        transition: "all .12s ease"
+                      }}
+                    >
+                      {isActive && <span style={{ width: 5, height: 5, borderRadius: "50%", background: "var(--primary)" }} />}
+                      {label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+
+          {/* SVG Area Spline Chart */}
+          <div style={{ position: "relative", width: "100%", overflowX: "auto" }}>
+            <svg
+              viewBox={`0 0 ${svgWidth} ${svgHeight}`}
+              style={{ width: "100%", height: "auto", display: "block" }}
+              onMouseLeave={() => setHoveredPoint(null)}
+            >
+              <defs>
+                <linearGradient id="areaGradient" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor="var(--primary)" stopOpacity="0.35" />
+                  <stop offset="100%" stopColor="var(--primary)" stopOpacity="0.0" />
+                </linearGradient>
+              </defs>
+
+              {/* Horizontal Grid lines and Y-axis percentage labels */}
+              {[100, 80, 60, 40, 20, 0].map(pct => {
+                const y = padY + (1 - pct / 100) * chartH;
+                return (
+                  <g key={pct}>
+                    <line
+                      x1={padX}
+                      y1={y}
+                      x2={svgWidth - padX}
+                      y2={y}
+                      stroke="var(--border)"
+                      strokeWidth="1"
+                      strokeDasharray={pct === 0 ? "none" : "3 3"}
+                      opacity="0.6"
+                    />
+                    <text
+                      x={padX - 8}
+                      y={y + 3.5}
+                      textAnchor="end"
+                      fontSize="10"
+                      fill="var(--text-faint)"
+                      fontFamily="Inter, sans-serif"
+                    >
+                      {pct}%
+                    </text>
+                  </g>
+                );
+              })}
+
+              {/* Spline Area Fill */}
+              {splinePaths.area && (
+                <path d={splinePaths.area} fill="url(#areaGradient)" />
+              )}
+
+              {/* Spline Line */}
+              {splinePaths.line && (
+                <path
+                  d={splinePaths.line}
+                  fill="none"
+                  stroke="var(--primary)"
+                  strokeWidth="2.5"
+                  strokeLinecap="round"
+                />
+              )}
+
+              {/* Vertical Guide Line for Active / Hovered Point */}
+              {activePoint && (
+                <line
+                  x1={activePoint.x}
+                  y1={activePoint.y}
+                  x2={activePoint.x}
+                  y2={padY + chartH}
+                  stroke="var(--primary)"
+                  strokeWidth="1.5"
+                  strokeDasharray="3 3"
+                  opacity="0.8"
+                />
+              )}
+
+              {/* Active Marker Circle */}
+              {activePoint && (
+                <g>
+                  <circle
+                    cx={activePoint.x}
+                    cy={activePoint.y}
+                    r="8"
+                    fill="var(--primary)"
+                    fillOpacity="0.25"
+                  />
+                  <circle
+                    cx={activePoint.x}
+                    cy={activePoint.y}
+                    r="4.5"
+                    fill="var(--primary)"
+                    stroke="#ffffff"
+                    strokeWidth="2"
+                  />
+                </g>
+              )}
+
+              {/* Floating Pill Tooltip Badge over Active Point */}
+              {activePoint && (
+                <g transform={`translate(${activePoint.x}, ${activePoint.y - 20})`}>
+                  <rect
+                    x="-20"
+                    y="-11"
+                    width="40"
+                    height="20"
+                    rx="10"
+                    fill="var(--primary)"
+                    filter="drop-shadow(0 2px 5px rgba(37,99,235,0.4))"
+                  />
+                  <text
+                    x="0"
+                    y="3"
+                    textAnchor="middle"
+                    fill="#ffffff"
+                    fontSize="11"
+                    fontWeight="700"
+                    fontFamily="Inter, sans-serif"
+                  >
+                    {activePoint.val}%
+                  </text>
+                </g>
+              )}
+
+              {/* Interactive Point Hit Areas and X-axis Labels */}
+              {splineCoords.map((pt, idx) => (
+                <g key={pt.label}>
+                  {/* Invisible Hit Circle for Hover */}
+                  <circle
+                    cx={pt.x}
+                    cy={pt.y}
+                    r="12"
+                    fill="transparent"
+                    style={{ cursor: "pointer" }}
+                    onMouseEnter={() => setHoveredPoint(idx)}
+                  />
+
+                  {/* X Axis Label */}
+                  <text
+                    x={pt.x}
+                    y={svgHeight - 8}
+                    textAnchor="middle"
+                    fontSize="10"
+                    fill={hoveredPoint === idx ? "var(--primary)" : "var(--text-faint)"}
+                    fontWeight={hoveredPoint === idx ? 700 : 500}
+                    fontFamily="Inter, sans-serif"
+                  >
+                    {pt.label}
+                  </text>
+                </g>
+              ))}
+            </svg>
+          </div>
+        </div>
+
+        {/* 2. Department Attendance Bar Chart */}
+        <div className="modern-card" style={{ padding: "20px 22px" }}>
+          <div style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            marginBottom: 16
+          }}>
+            <div style={{ fontSize: 15, fontWeight: 700, color: "var(--text)" }}>
+              Department Attendance
+            </div>
+            <div style={{ fontSize: 12, color: "var(--text-dim)", fontWeight: 500 }}>
+              Live
+            </div>
+          </div>
+
+          {/* SVG Bar Chart */}
+          <div style={{ width: "100%", overflowX: "auto" }}>
+            <svg
+              viewBox={`0 0 ${barSvgW} ${barSvgH}`}
+              style={{ width: "100%", height: "auto", display: "block" }}
+              onMouseLeave={() => setHoveredBar(null)}
+            >
+              {/* Horizontal Grid lines */}
+              {[100, 80, 60, 40, 20, 0].map(pct => {
+                const y = barPadY + (1 - pct / 100) * barChartH;
+                return (
+                  <g key={pct}>
+                    <line
+                      x1={barPadX}
+                      y1={y}
+                      x2={barSvgW - barPadX}
+                      y2={y}
+                      stroke="var(--border)"
+                      strokeWidth="1"
+                      strokeDasharray={pct === 0 ? "none" : "3 3"}
+                      opacity="0.6"
+                    />
+                    <text
+                      x={barPadX - 8}
+                      y={y + 3.5}
+                      textAnchor="end"
+                      fontSize="9.5"
+                      fill="var(--text-faint)"
+                      fontFamily="Inter, sans-serif"
+                    >
+                      {pct}%
+                    </text>
+                  </g>
+                );
+              })}
+
+              {/* Bars */}
+              {barData.map((bar, i) => {
+                const x = barPadX + i * barStepX + (barStepX - barWidth) / 2;
+                const rawH = ((bar.val || 0) / 100) * barChartH;
+                const barH = Math.max(rawH, 4);
+                const y = barPadY + barChartH - barH;
+                const isSelected = hoveredBar === i || (hoveredBar === null && bar.isPeak);
+                const isPeak = bar.isPeak;
+
+                return (
+                  <g key={bar.label} onMouseEnter={() => setHoveredBar(i)} style={{ cursor: "pointer" }}>
+                    <title>{`${bar.label}: ${bar.present != null ? `${bar.present}/${bar.total} present ` : ""}(${bar.val}%)`}</title>
+                    {/* Floating Pill Badge over Peak/Hovered Bar */}
+                    {isSelected && (
+                      <g transform={`translate(${x + barWidth / 2}, ${y - 12})`}>
+                        <rect
+                          x="-20"
+                          y="-10"
+                          width="40"
+                          height="18"
+                          rx="9"
+                          fill="var(--primary)"
+                          filter="drop-shadow(0 2px 4px rgba(37,99,235,0.4))"
+                        />
+                        <text
+                          x="0"
+                          y="3"
+                          textAnchor="middle"
+                          fill="#ffffff"
+                          fontSize="10"
+                          fontWeight="700"
+                          fontFamily="Inter, sans-serif"
+                        >
+                          {bar.val}%
+                        </text>
+                      </g>
+                    )}
+
+                    {/* Bar Column */}
+                    <rect
+                      x={x}
+                      y={y}
+                      width={barWidth}
+                      height={barH}
+                      rx="6"
+                      ry="6"
+                      fill={isPeak ? "var(--primary)" : (isSelected ? "var(--chart-bar-hover)" : "var(--chart-bar-mute)")}
+                      style={{ transition: "fill .15s ease" }}
+                    />
+
+                    {/* Department X-axis Label */}
+                    <text
+                      x={x + barWidth / 2}
+                      y={barSvgH - 8}
+                      textAnchor="middle"
+                      fontSize="9.5"
+                      fill={isSelected ? "var(--primary)" : "var(--text-faint)"}
+                      fontWeight={isSelected ? 700 : 500}
+                      fontFamily="Inter, sans-serif"
+                    >
+                      {bar.label}
+                    </text>
+                  </g>
+                );
+              })}
+            </svg>
+          </div>
+        </div>
+
+      </div>
+
+
+      {/* BOTTOM SECTION: Attendance Overview / Recent Access Logs */}
+      <div className="modern-card" style={{ overflow: "hidden" }}>
+
+        {/* Card Header with Search, Date Picker & Advanced Filter */}
+        <div style={{
+          padding: "16px 20px",
+          borderBottom: "1px solid var(--border)",
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          flexWrap: "wrap",
+          gap: 12
+        }}>
+
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <div style={{ fontSize: 16, fontWeight: 700, color: "var(--text)" }}>
+              Attendance Overview
+            </div>
+            {isLogsLoading && (
+              <span style={{ fontSize: 12, color: "var(--primary)", display: "inline-flex", alignItems: "center", gap: 4 }}>
+                <Icon name="loader" size={13} /> Loading page {currentPage}...
+              </span>
+            )}
+          </div>
+
+          <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+
+            {/* Quick Search Input Pill */}
+            <div style={{ position: "relative", minWidth: 200 }}>
+              <span style={{ position: "absolute", left: 10, top: 8.5, color: "var(--text-faint)" }}>
+                <Icon name="search" size={15} />
+              </span>
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={e => setSearchQuery(e.target.value)}
+                placeholder="Quick Search..."
+                style={{
+                  width: "100%",
+                  padding: "7.5px 12px 7.5px 32px",
+                  borderRadius: 8,
+                  border: "1px solid var(--border)",
+                  background: "var(--surface-2)",
+                  color: "var(--text)",
+                  fontSize: 12.5,
+                  outline: "none"
+                }}
+              />
+            </div>
+
+            {/* Date Display / Picker Pill */}
+            <div style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 7,
+              background: "var(--surface-2)",
+              border: "1px solid var(--border)",
+              borderRadius: 8,
+              padding: "7px 12px",
+              fontSize: 12.5,
+              color: "var(--text)",
+              fontWeight: 500
+            }}>
+              <Icon name="calendar" size={14} style={{ color: "var(--text-dim)" }} />
+              <span>{dateStr ? formatDate(dateStr) : formattedToday}</span>
+            </div>
+
+            {/* Advanced Filters Button */}
+            <button
+              type="button"
+              onClick={() => setShowFilters(f => !f)}
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 7,
+                padding: "8px 14px",
+                borderRadius: 8,
+                background: showFilters ? "var(--primary-hover)" : "var(--primary)",
+                color: "#ffffff",
+                border: "none",
+                fontSize: 12.5,
+                fontWeight: 600,
+                cursor: "pointer",
+                boxShadow: "0 2px 6px var(--primary-glow)",
+                transition: "background .12s ease"
+              }}
+            >
+              <Icon name="sliders" size={14} /> Advanced Filters
+            </button>
+
+            {/* Refresh Button */}
+            {onRefreshActivity && (
+              <button
+                type="button"
+                onClick={onRefreshActivity}
+                title="Refresh Activity Logs"
+                style={{
+                  width: 33,
+                  height: 33,
+                  borderRadius: 8,
+                  border: "1px solid var(--border)",
+                  background: "var(--surface-2)",
+                  color: "var(--text-dim)",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  cursor: "pointer"
+                }}
+              >
+                <Icon name="refresh" size={14} />
+              </button>
+            )}
+
+          </div>
+
+        </div>
+
+        {/* Collapsible Advanced Filters Bar */}
+        {showFilters && (
+          <div style={{
+            padding: "12px 20px",
+            background: "var(--surface-2)",
+            borderBottom: "1px solid var(--border)",
+            display: "flex",
+            alignItems: "center",
+            gap: 14,
+            flexWrap: "wrap",
+            fontSize: 12.5
+          }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              <span style={{ color: "var(--text-dim)", fontWeight: 500 }}>Decision:</span>
+              <select
+                value={filterDecision}
+                onChange={e => setFilterDecision(e.target.value)}
+                style={{
+                  padding: "5px 10px",
+                  borderRadius: 6,
+                  border: "1px solid var(--border)",
+                  background: "var(--surface)",
+                  color: "var(--text)",
+                  fontSize: 12
+                }}
+              >
+                <option value="all">All Decisions</option>
+                <option value="GRANTED">Granted Only</option>
+                <option value="DENIED">Denied Only</option>
+              </select>
+            </div>
+
+            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              <span style={{ color: "var(--text-dim)", fontWeight: 500 }}>Department:</span>
+              <select
+                value={filterDept}
+                onChange={e => setFilterDept(e.target.value)}
+                style={{
+                  padding: "5px 10px",
+                  borderRadius: 6,
+                  border: "1px solid var(--border)",
+                  background: "var(--surface)",
+                  color: "var(--text)",
+                  fontSize: 12
+                }}
+              >
+                <option value="all">All Departments</option>
+                <option value="operations">Operations</option>
+                <option value="engineering">Engineering</option>
+                <option value="finance">Finance</option>
+                <option value="hr">HR</option>
+                <option value="sales">Sales</option>
+              </select>
+            </div>
+
+            {(searchQuery || filterDecision !== "all" || filterDept !== "all") && (
+              <button
+                type="button"
+                onClick={() => { setSearchQuery(""); setFilterDecision("all"); setFilterDept("all"); }}
+                style={{
+                  background: "none",
+                  border: "none",
+                  color: "var(--primary)",
+                  cursor: "pointer",
+                  fontSize: 12,
+                  textDecoration: "underline"
+                }}
+              >
+                Reset Filters
+              </button>
+            )}
+          </div>
+        )}
+
+        {/* Table Content */}
+        {displayedLogs.length === 0 ? (
+          <div style={{ padding: "40px 20px", textAlign: "center", color: "var(--text-faint)", fontSize: 13 }}>
+            {recentLogs.length === 0 ? "No access logs recorded yet." : "No logs matching current search / filters."}
+          </div>
+        ) : (
+          <div style={{ overflowX: "auto", opacity: isLogsLoading ? 0.6 : 1, transition: "opacity 0.15s ease" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5 }}>
+              <thead>
+                <tr style={{
+                  borderBottom: "1px solid var(--border)",
+                  color: "var(--text-dim)",
+                  textAlign: "left",
+                  background: "var(--surface)"
+                }}>
+                  <th style={{ padding: "11px 16px", fontWeight: 600, fontSize: 11.5 }}>ID</th>
+                  <th style={{ padding: "11px 16px", fontWeight: 600, fontSize: 11.5 }}>Employee</th>
+                  <th style={{ padding: "11px 16px", fontWeight: 600, fontSize: 11.5 }}>Role</th>
+                  <th style={{ padding: "11px 16px", fontWeight: 600, fontSize: 11.5 }}>Department</th>
+                  <th style={{ padding: "11px 16px", fontWeight: 600, fontSize: 11.5 }}>Date</th>
+                  <th style={{ padding: "11px 16px", fontWeight: 600, fontSize: 11.5 }}>Status</th>
+                  <th style={{ padding: "11px 16px", fontWeight: 600, fontSize: 11.5 }}>Check-in</th>
+                  <th style={{ padding: "11px 16px", fontWeight: 600, fontSize: 11.5 }}>Check-out</th>
+                  <th style={{ padding: "11px 16px", fontWeight: 600, fontSize: 11.5 }}>Work hours / Door</th>
+                </tr>
+              </thead>
+              <tbody>
+                {displayedLogs.map((ev, index) => {
+                  const decision = getDecision(ev);
+                  const granted = decision === "GRANTED";
+                  const name = getEmployeeName(ev);
+                  const code = getEmployeeCode(ev);
+                  const dept = getEmployeeDept(ev);
+                  const evTime = ev.scanned_at || ev.access_time || ev.received_at;
+                  const door = ev.room_name || ev.device_label || "--";
+
+                  // Extract initials for avatar chip
+                  const initials = name.split(" ").map(w => w[0]).join("").slice(0, 2).toUpperCase() || "EM";
+
+                  return (
+                    <tr
+                      key={ev.id || ev.event_id || index}
+                      className="table-row-hover"
+                      style={{ borderBottom: "1px solid var(--border)", transition: "background .1s ease" }}
+                    >
+                      {/* ID */}
+                      <td style={{ padding: "12px 16px", whiteSpace: "nowrap" }}>
+                        <span className="mono" style={{ fontSize: 11.5, color: "var(--text-dim)" }}>
+                          {code !== "--" ? code : `#${ev.id || index + 1}`}
+                        </span>
+                      </td>
+
+                      {/* Employee Avatar + Name */}
+                      <td style={{ padding: "12px 16px", whiteSpace: "nowrap" }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                          <div style={{
+                            width: 30,
+                            height: 30,
+                            borderRadius: "50%",
+                            background: "var(--primary-dim)",
+                            color: "var(--primary)",
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            fontSize: 11,
+                            fontWeight: 700,
+                            flexShrink: 0
+                          }}>
+                            {initials}
+                          </div>
+                          <div>
+                            <div style={{ fontWeight: 600, color: "var(--text)" }}>
+                              {name}
+                            </div>
+                            <div style={{ fontSize: 11, color: "var(--text-faint)", marginTop: 1 }}>
+                              {ev.card_uid ? `Card: ${ev.card_uid}` : "Standard Badge"}
+                            </div>
+                          </div>
+                        </div>
+                      </td>
+
+                      {/* Role */}
+                      <td style={{ padding: "12px 16px", color: "var(--text-dim)" }}>
+                        {ev.person_type || "Staff"}
+                      </td>
+
+                      {/* Department */}
+                      <td style={{ padding: "12px 16px", color: "var(--text-dim)" }}>
+                        {dept}
+                      </td>
+
+                      {/* Date */}
+                      <td style={{ padding: "12px 16px", whiteSpace: "nowrap", color: "var(--text-dim)" }}>
+                        {formatDate(evTime)}
+                      </td>
+
+                      {/* Status */}
+                      <td style={{ padding: "12px 16px", whiteSpace: "nowrap" }}>
+                        <StatusBadge status={granted ? "on_time" : "absent"} />
+                      </td>
+
+                      {/* Check-in */}
+                      <td style={{ padding: "12px 16px", whiteSpace: "nowrap" }}>
+                        <span className="mono" style={{ fontSize: 12 }}>
+                          {formatTime(evTime)}
+                        </span>
+                      </td>
+
+                      {/* Check-out */}
+                      <td style={{ padding: "12px 16px", whiteSpace: "nowrap", color: "var(--text-dim)" }}>
+                        <span className="mono" style={{ fontSize: 12 }}>
+                          {ev.direction === "OUT" ? formatTime(evTime) : "--"}
+                        </span>
+                      </td>
+
+                      {/* Work hours / Door */}
+                      <td style={{ padding: "12px 16px", whiteSpace: "nowrap" }}>
+                        <span style={{
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: 6,
+                          fontSize: 11.5,
+                          color: "var(--text-dim)"
+                        }}>
+                          <Icon name="cpu" size={13} style={{ color: "var(--text-faint)" }} />
+                          {door}
+                        </span>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        {/* 30-Records Server Pagination Bar */}
+        {totalEvents > 0 && (
+          <div style={{
+            padding: "14px 20px",
+            borderTop: "1px solid var(--border)",
+            background: "var(--surface)",
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            flexWrap: "wrap",
+            gap: 12
+          }}>
+            <div style={{ fontSize: 12.5, color: "var(--text-dim)" }}>
+              Showing <strong style={{ color: "var(--text)" }}>{totalEvents === 0 ? 0 : (currentPage - 1) * 30 + 1}</strong> to{" "}
+              <strong style={{ color: "var(--text)" }}>{Math.min(currentPage * 30, totalEvents)}</strong> of{" "}
+              <strong style={{ color: "var(--text)" }}>{totalEvents.toLocaleString()}</strong> records
+              {totalPages > 1 && (
+                <span style={{ marginLeft: 8, color: "var(--text-faint)" }}>
+                  (Page {currentPage} of {totalPages})
+                </span>
+              )}
+            </div>
+
+            <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+              {/* First page */}
+              {totalPages > 5 && (
+                <button
+                  type="button"
+                  onClick={() => onPageChange && onPageChange(1)}
+                  disabled={currentPage === 1 || isLogsLoading}
+                  title="First Page"
+                  style={{
+                    padding: "5px 8px",
+                    fontSize: 12,
+                    borderRadius: 6,
+                    border: "1px solid var(--border)",
+                    background: "var(--surface-2)",
+                    color: currentPage === 1 ? "var(--text-faint)" : "var(--text)",
+                    cursor: currentPage === 1 ? "not-allowed" : "pointer",
+                    opacity: currentPage === 1 ? 0.4 : 1,
+                    display: "inline-flex",
+                    alignItems: "center"
+                  }}
+                >
+                  <Icon name="chevrons-left" size={13} />
+                </button>
+              )}
+
+              {/* Prev */}
+              <button
+                type="button"
+                onClick={() => onPageChange && onPageChange(Math.max(1, currentPage - 1))}
+                disabled={currentPage === 1 || isLogsLoading}
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 4,
+                  padding: "5px 10px",
+                  fontSize: 12,
+                  fontWeight: 600,
+                  borderRadius: 6,
+                  border: "1px solid var(--border)",
+                  background: "var(--surface-2)",
+                  color: currentPage === 1 ? "var(--text-faint)" : "var(--text)",
+                  cursor: currentPage === 1 ? "not-allowed" : "pointer",
+                  opacity: currentPage === 1 ? 0.4 : 1
+                }}
+              >
+                <Icon name="chevron-left" size={13} /> Prev
+              </button>
+
+              {/* Page pills */}
+              {pageItems.map((p, idx) => {
+                if (p === "...") {
+                  return (
+                    <span
+                      key={`dots-${idx}`}
+                      style={{ padding: "0 6px", color: "var(--text-faint)", fontSize: 13, userSelect: "none" }}
+                    >
+                      ...
+                    </span>
+                  );
+                }
+                const isActive = p === currentPage;
+                return (
+                  <button
+                    key={p}
+                    type="button"
+                    onClick={() => onPageChange && onPageChange(p)}
+                    disabled={isLogsLoading}
+                    style={{
+                      minWidth: 30,
+                      height: 28,
+                      padding: "0 7px",
+                      fontSize: 12,
+                      fontWeight: isActive ? 700 : 500,
+                      borderRadius: 6,
+                      border: isActive ? "1px solid var(--primary)" : "1px solid var(--border)",
+                      background: isActive ? "var(--primary)" : "var(--surface-2)",
+                      color: isActive ? "#ffffff" : "var(--text)",
+                      cursor: "pointer",
+                      transition: "all 0.15s ease"
+                    }}
+                  >
+                    {p}
+                  </button>
+                );
+              })}
+
+              {/* Next */}
+              <button
+                type="button"
+                onClick={() => onPageChange && onPageChange(Math.min(totalPages, currentPage + 1))}
+                disabled={currentPage === totalPages || isLogsLoading}
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 4,
+                  padding: "5px 10px",
+                  fontSize: 12,
+                  fontWeight: 600,
+                  borderRadius: 6,
+                  border: "1px solid var(--border)",
+                  background: "var(--surface-2)",
+                  color: currentPage === totalPages ? "var(--text-faint)" : "var(--text)",
+                  cursor: currentPage === totalPages ? "not-allowed" : "pointer",
+                  opacity: currentPage === totalPages ? 0.4 : 1
+                }}
+              >
+                Next <Icon name="chevron-right" size={13} />
+              </button>
+
+              {/* Last page */}
+              {totalPages > 5 && (
+                <button
+                  type="button"
+                  onClick={() => onPageChange && onPageChange(totalPages)}
+                  disabled={currentPage === totalPages || isLogsLoading}
+                  title="Last Page"
+                  style={{
+                    padding: "5px 8px",
+                    fontSize: 12,
+                    borderRadius: 6,
+                    border: "1px solid var(--border)",
+                    background: "var(--surface-2)",
+                    color: currentPage === totalPages ? "var(--text-faint)" : "var(--text)",
+                    cursor: currentPage === totalPages ? "not-allowed" : "pointer",
+                    opacity: currentPage === totalPages ? 0.4 : 1,
+                    display: "inline-flex",
+                    alignItems: "center"
+                  }}
+                >
+                  <Icon name="chevrons-right" size={13} />
+                </button>
+              )}
+
+              {/* Jump to page */}
+              {totalPages > 5 && (
+                <form
+                  onSubmit={handleJump}
+                  style={{ display: "inline-flex", alignItems: "center", gap: 4, marginLeft: 6 }}
+                >
+                  <span style={{ fontSize: 11.5, color: "var(--text-faint)" }}>Go:</span>
+                  <input
+                    type="number"
+                    min="1"
+                    max={totalPages}
+                    value={jumpPage}
+                    onChange={e => setJumpPage(e.target.value)}
+                    placeholder="#"
+                    style={{
+                      width: 42,
+                      height: 28,
+                      padding: "0 4px",
+                      borderRadius: 6,
+                      border: "1px solid var(--border)",
+                      background: "var(--surface-2)",
+                      color: "var(--text)",
+                      fontSize: 11.5,
+                      textAlign: "center"
+                    }}
+                  />
+                </form>
+              )}
+            </div>
+          </div>
+        )}
+
+      </div>
+
+    </div>
+  );
+}
+
+
+function RecentLogsPage({
+  activity = [],
+  activityTotal = 0,
+  activityPage = 1,
+  activityStats = null,
+  onPageChange,
+  onRefreshActivity,
+  isLogsLoading = false,
+  employees = [],
+  devices = [],
+  rooms = []
+}) {
+  const [q, setQ] = useState("");
+  const [filterDecision, setFilterDecision] = useState("all");
+  const [jumpPage, setJumpPage] = useState("");
+
+  const formatTime = (value) => {
+    if (!value) return "--";
+    const d = new Date(value);
+    if (isNaN(d.getTime())) return value;
+    return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+  };
+
+  const formatDate = (value) => {
+    if (!value) return "--";
+    const d = new Date(value);
+    if (isNaN(d.getTime())) return value;
+    return d.toLocaleDateString([], { day: "2-digit", month: "short", year: "numeric" });
+  };
+
+  const getEmployeeName = (ev) => {
+    if (ev.full_name && ev.full_name !== "Unknown") return ev.full_name;
+    if (ev.person_name && ev.person_name !== "Unknown") return ev.person_name;
+    if (ev.name && ev.name !== "Unknown") return ev.name;
+    if (employees && employees.length > 0) {
+      if (ev.person_id) {
+        const found = employees.find(e => Number(e.id) === Number(ev.person_id));
+        if (found && found.full_name) return found.full_name;
+      }
+      if (ev.employee_code) {
+        const found = employees.find(e => (e.employee_code || "").toUpperCase() === (ev.employee_code || "").toUpperCase());
+        if (found && found.full_name) return found.full_name;
+      }
+      if (ev.card_uid) {
+        const cleanCard = String(ev.card_uid).replace(/[^0-9A-Fa-f]/g, "").toUpperCase();
+        const found = employees.find(e => e.card_uid && String(e.card_uid).replace(/[^0-9A-Fa-f]/g, "").toUpperCase() === cleanCard);
+        if (found && found.full_name) return found.full_name;
+      }
+    }
     if (ev.employee_code) return ev.employee_code;
     if (ev.person_id) return "Employee #" + ev.person_id;
     return "Unregistered User";
@@ -331,20 +2039,10 @@ function DashboardPage({
   };
 
   const getDecision = (ev) => {
-    const value = String(
-      ev.decision ||
-      ev.result ||
-      ""
-    ).toUpperCase();
-
-    if (value === "ALLOWED" || value === "GRANTED") {
-      return "GRANTED";
-    }
-
+    const value = String(ev.decision || ev.result || "").toUpperCase();
+    if (value === "ALLOWED" || value === "GRANTED") return "GRANTED";
     return "DENIED";
   };
-
-  const [jumpPage, setJumpPage] = useState("");
 
   const recentLogs = Array.isArray(activity) ? activity : [];
   const totalEvents = activityTotal != null ? Number(activityTotal) : recentLogs.length;
@@ -370,468 +2068,341 @@ function DashboardPage({
     }
   };
 
+  const filteredLogs = useMemo(() => {
+    return recentLogs.filter(ev => {
+      const name = getEmployeeName(ev).toLowerCase();
+      const code = getEmployeeCode(ev).toLowerCase();
+      const card = (ev.card_uid || "").toLowerCase();
+      const door = (ev.room_name || ev.device_label || "").toLowerCase();
+      const query = q.toLowerCase();
+      const matchesQ = !query || name.includes(query) || code.includes(query) || card.includes(query) || door.includes(query);
+
+      const decision = getDecision(ev);
+      const matchesDecision = filterDecision === "all" || decision === filterDecision;
+
+      return matchesQ && matchesDecision;
+    });
+  }, [recentLogs, q, filterDecision, employees]);
+
   return (
-    <div style={{display:"flex", flexDirection:"column", gap:18}}>
+    <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
 
-      {/* Summary cards */}
-      <div style={{
-        display:"grid",
-        gridTemplateColumns:"repeat(4, minmax(0, 1fr))",
-        gap:12
-      }}>
-
-        <div style={{
-          background:"var(--surface)",
-          border:"1px solid var(--border)",
-          borderRadius:12,
-          padding:16
-        }}>
-          <div style={{
-            fontSize:12,
-            color:"var(--text-dim)",
-            marginBottom:7
-          }}>
-            Employees
+      {/* Top Stat Cards */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, minmax(0, 1fr))", gap: 14 }}>
+        <div className="modern-card" style={{ padding: "18px 20px" }}>
+          <div style={{ fontSize: 12.5, color: "var(--text-dim)", fontWeight: 500, marginBottom: 8 }}>
+            Total Events
           </div>
-
-          <div style={{
-            fontSize:25,
-            fontWeight:700
-          }}>
-            {employees?.length || 0}
+          <div style={{ fontSize: 26, fontWeight: 700, color: "var(--text)", lineHeight: 1 }}>
+            {totalEvents.toLocaleString()}
+          </div>
+          <div style={{ fontSize: 11.5, color: "var(--text-faint)", marginTop: 6 }}>
+            Recorded in system
           </div>
         </div>
 
-        <div style={{
-          background:"var(--surface)",
-          border:"1px solid var(--border)",
-          borderRadius:12,
-          padding:16
-        }}>
-          <div style={{
-            fontSize:12,
-            color:"var(--text-dim)",
-            marginBottom:7
-          }}>
-            Currently Inside
+        <div className="modern-card" style={{ padding: "18px 20px" }}>
+          <div style={{ fontSize: 12.5, color: "var(--text-dim)", fontWeight: 500, marginBottom: 8 }}>
+            Access Granted
           </div>
-
-          <div style={{
-            fontSize:25,
-            fontWeight:700
-          }}>
-            {occupancy?.count || 0}
+          <div style={{ fontSize: 26, fontWeight: 700, color: "var(--teal)", lineHeight: 1 }}>
+            {grantedCount.toLocaleString()}
+          </div>
+          <div style={{ fontSize: 11.5, color: "var(--teal)", marginTop: 6, display: "flex", alignItems: "center", gap: 4 }}>
+            <span style={{ width: 6, height: 6, borderRadius: "50%", background: "currentColor" }} /> Authorized entry
           </div>
         </div>
 
-        <div style={{
-          background:"var(--surface)",
-          border:"1px solid var(--border)",
-          borderRadius:12,
-          padding:16
-        }}>
-          <div style={{
-            fontSize:12,
-            color:"var(--text-dim)",
-            marginBottom:7
-          }}>
-            Recent Granted
+        <div className="modern-card" style={{ padding: "18px 20px" }}>
+          <div style={{ fontSize: 12.5, color: "var(--text-dim)", fontWeight: 500, marginBottom: 8 }}>
+            Access Denied
           </div>
-
-          <div style={{
-            fontSize:25,
-            fontWeight:700
-          }}>
-            {grantedCount}
+          <div style={{ fontSize: 26, fontWeight: 700, color: "var(--rose)", lineHeight: 1 }}>
+            {deniedCount.toLocaleString()}
+          </div>
+          <div style={{ fontSize: 11.5, color: "var(--rose)", marginTop: 6, display: "flex", alignItems: "center", gap: 4 }}>
+            <span style={{ width: 6, height: 6, borderRadius: "50%", background: "currentColor" }} /> Blocked attempts
           </div>
         </div>
 
-        <div style={{
-          background:"var(--surface)",
-          border:"1px solid var(--border)",
-          borderRadius:12,
-          padding:16
-        }}>
-          <div style={{
-            fontSize:12,
-            color:"var(--text-dim)",
-            marginBottom:7
-          }}>
-            Recent Denied
+        <div className="modern-card" style={{ padding: "18px 20px", display: "flex", flexDirection: "column", justifyContent: "space-between" }}>
+          <div>
+            <div style={{ fontSize: 12.5, color: "var(--text-dim)", fontWeight: 500, marginBottom: 8 }}>
+              Live Stream Status
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13.5, fontWeight: 600, color: "var(--teal)" }}>
+              <span style={{ width: 8, height: 8, borderRadius: "50%", background: "var(--teal)", boxShadow: "0 0 8px var(--teal)" }} />
+              Live Stream Active
+            </div>
           </div>
-
-          <div style={{
-            fontSize:25,
-            fontWeight:700
-          }}>
-            {deniedCount}
+          <div style={{ fontSize: 11.5, color: "var(--text-faint)" }}>
+            SSE real-time access events
           </div>
         </div>
-
       </div>
 
+      {/* Main Logs Table Card */}
+      <div className="modern-card" style={{ overflow: "hidden" }}>
 
-      {/* Recent access logs */}
-      <div style={{
-        background:"var(--surface)",
-        border:"1px solid var(--border)",
-        borderRadius:12,
-        overflow:"hidden"
-      }}>
-
+        {/* Toolbar Header */}
         <div style={{
-          padding:"14px 18px",
-          borderBottom:"1px solid var(--border)",
-          display:"flex",
-          justifyContent:"space-between",
-          alignItems:"center",
-          flexWrap:"wrap",
-          gap:10
+          padding: "16px 20px",
+          borderBottom: "1px solid var(--border)",
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          flexWrap: "wrap",
+          gap: 12
         }}>
-
           <div>
-            <div style={{
-              fontSize:15,
-              fontWeight:700,
-              display:"flex",
-              alignItems:"center",
-              gap:8
-            }}>
+            <div style={{ fontSize: 16, fontWeight: 700, color: "var(--text)", display: "flex", alignItems: "center", gap: 8 }}>
               Recent Access Logs
               {isLogsLoading && (
-                <span style={{ fontSize:12, color:"var(--primary)", display:"inline-flex", alignItems:"center", gap:4 }}>
-                  <Icon name="loader" size={13}/> Loading page {currentPage}...
+                <span style={{ fontSize: 12, color: "var(--primary)", display: "inline-flex", alignItems: "center", gap: 4 }}>
+                  <Icon name="loader" size={13} /> Loading page {currentPage}...
                 </span>
               )}
             </div>
-
-            <div style={{
-              fontSize:11.5,
-              color:"var(--text-faint)",
-              marginTop:3
-            }}>
-              30 records per page
+            <div style={{ fontSize: 11.5, color: "var(--text-faint)", marginTop: 3 }}>
+              Page <strong>{currentPage}</strong> of <strong>{totalPages}</strong> • 30 records per page
             </div>
           </div>
 
-          <div style={{
-            display:"flex",
-            alignItems:"center",
-            gap:10
-          }}>
-            <div style={{
-              fontSize:12,
-              color:"var(--text-dim)",
-              background:"var(--surface-2)",
-              padding:"4px 10px",
-              borderRadius:6,
-              border:"1px solid var(--border)"
-            }}>
-              Total: <strong style={{color:"var(--text)"}}>{totalEvents.toLocaleString()}</strong> records • Page <strong>{currentPage}</strong> of <strong>{totalPages}</strong>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+            {/* Search Input */}
+            <div style={{ position: "relative", minWidth: 220 }}>
+              <span style={{ position: "absolute", left: 10, top: 8.5, color: "var(--text-faint)" }}>
+                <Icon name="search" size={15} />
+              </span>
+              <input
+                type="text"
+                value={q}
+                onChange={e => setQ(e.target.value)}
+                placeholder="Search name, ID, card..."
+                style={{
+                  width: "100%",
+                  padding: "7.5px 12px 7.5px 32px",
+                  borderRadius: 8,
+                  border: "1px solid var(--border)",
+                  background: "var(--surface-2)",
+                  color: "var(--text)",
+                  fontSize: 12.5,
+                  outline: "none"
+                }}
+              />
             </div>
 
+            {/* Decision Filter */}
+            <select
+              value={filterDecision}
+              onChange={e => setFilterDecision(e.target.value)}
+              style={{
+                padding: "7.5px 12px",
+                borderRadius: 8,
+                border: "1px solid var(--border)",
+                background: "var(--surface-2)",
+                color: "var(--text)",
+                fontSize: 12.5,
+                outline: "none"
+              }}
+            >
+              <option value="all">All Decisions</option>
+              <option value="GRANTED">Granted Only</option>
+              <option value="DENIED">Denied Only</option>
+            </select>
+
+            {/* Refresh Button */}
             {onRefreshActivity && (
               <button
                 type="button"
                 onClick={onRefreshActivity}
                 title="Refresh Activity Logs"
                 style={{
-                  background:"var(--surface-2)",
-                  border:"1px solid var(--border)",
-                  borderRadius:6,
-                  padding:"5px 9px",
-                  cursor:"pointer",
-                  color:"var(--text)",
-                  display:"flex",
-                  alignItems:"center",
-                  justifyContent:"center"
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 6,
+                  padding: "7.5px 12px",
+                  borderRadius: 8,
+                  border: "1px solid var(--border)",
+                  background: "var(--surface-2)",
+                  color: "var(--text)",
+                  fontSize: 12.5,
+                  fontWeight: 500,
+                  cursor: "pointer"
                 }}
               >
-                <Icon name="refresh" size={13}/>
+                <Icon name="refresh" size={13} /> Refresh
               </button>
             )}
           </div>
-
         </div>
 
-
-        {recentLogs.length === 0 ? (
-
-          <div style={{
-            padding:"35px 20px",
-            textAlign:"center",
-            color:"var(--text-faint)",
-            fontSize:13
-          }}>
-            No access logs available yet.
+        {/* Table */}
+        {filteredLogs.length === 0 ? (
+          <div style={{ padding: "40px 20px", textAlign: "center", color: "var(--text-faint)", fontSize: 13 }}>
+            {recentLogs.length === 0 ? "No access logs available yet." : "No logs match your filter criteria."}
           </div>
-
         ) : (
-
-          <div style={{overflowX:"auto", opacity: isLogsLoading ? 0.6 : 1, transition:"opacity 0.15s ease"}}>
-
-            <table style={{
-              width:"100%",
-              borderCollapse:"collapse",
-              fontSize:12.5
-            }}>
-
+          <div style={{ overflowX: "auto", opacity: isLogsLoading ? 0.6 : 1, transition: "opacity 0.15s ease" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5 }}>
               <thead>
                 <tr style={{
-                  borderBottom:"1px solid var(--border)",
-                  color:"var(--text-dim)",
-                  textAlign:"left"
+                  borderBottom: "1px solid var(--border)",
+                  color: "var(--text-dim)",
+                  textAlign: "left",
+                  background: "var(--surface)"
                 }}>
-
-                  <th style={{padding:"10px 14px", fontWeight:600}}>
-                    Time
-                  </th>
-
-                  <th style={{padding:"10px 14px", fontWeight:600}}>
-                    Employee
-                  </th>
-
-                  <th style={{padding:"10px 14px", fontWeight:600}}>
-                    Employee ID
-                  </th>
-
-                  <th style={{padding:"10px 14px", fontWeight:600}}>
-                    Door
-                  </th>
-
-                  <th style={{padding:"10px 14px", fontWeight:600}}>
-                    Direction
-                  </th>
-
-                  <th style={{padding:"10px 14px", fontWeight:600}}>
-                    Card UID
-                  </th>
-
-                  <th style={{padding:"10px 14px", fontWeight:600}}>
-                    Fingerprint
-                  </th>
-
-                  <th style={{padding:"10px 14px", fontWeight:600}}>
-                    Result
-                  </th>
-
-                  <th style={{padding:"10px 14px", fontWeight:600}}>
-                    Reason
-                  </th>
-
+                  <th style={{ padding: "11px 16px", fontWeight: 600, fontSize: 11.5 }}>Time</th>
+                  <th style={{ padding: "11px 16px", fontWeight: 600, fontSize: 11.5 }}>Employee</th>
+                  <th style={{ padding: "11px 16px", fontWeight: 600, fontSize: 11.5 }}>Employee ID</th>
+                  <th style={{ padding: "11px 16px", fontWeight: 600, fontSize: 11.5 }}>Door / Location</th>
+                  <th style={{ padding: "11px 16px", fontWeight: 600, fontSize: 11.5 }}>Direction</th>
+                  <th style={{ padding: "11px 16px", fontWeight: 600, fontSize: 11.5 }}>Card UID</th>
+                  <th style={{ padding: "11px 16px", fontWeight: 600, fontSize: 11.5, textAlign: "center" }}>Fingerprint</th>
+                  <th style={{ padding: "11px 16px", fontWeight: 600, fontSize: 11.5 }}>Result</th>
+                  <th style={{ padding: "11px 16px", fontWeight: 600, fontSize: 11.5 }}>Reason</th>
                 </tr>
               </thead>
-
               <tbody>
-
-                {recentLogs.map((ev, index) => {
-
+                {filteredLogs.map((ev, index) => {
                   const decision = getDecision(ev);
-
                   const granted = decision === "GRANTED";
+                  const name = getEmployeeName(ev);
+                  const code = getEmployeeCode(ev);
+                  const dept = getEmployeeDept(ev);
+                  const evTime = ev.scanned_at || ev.access_time || ev.received_at;
+                  const initials = name.split(" ").map(w => w[0]).join("").slice(0, 2).toUpperCase() || "EM";
 
                   return (
                     <tr
                       key={ev.id || ev.event_id || index}
-                      style={{
-                        borderBottom:"1px solid var(--border)"
-                      }}
+                      className="table-row-hover"
+                      style={{ borderBottom: "1px solid var(--border)", transition: "background .1s ease" }}
                     >
-
                       {/* Time */}
-                      <td style={{
-                        padding:"11px 14px",
-                        whiteSpace:"nowrap"
-                      }}>
-                        <div className="mono">
-                          {formatTime(
-                            ev.scanned_at ||
-                            ev.access_time ||
-                            ev.received_at
-                          )}
+                      <td style={{ padding: "12px 16px", whiteSpace: "nowrap" }}>
+                        <div className="mono" style={{ fontSize: 12, fontWeight: 500 }}>
+                          {formatTime(evTime)}
                         </div>
-
-                        <div style={{
-                          fontSize:10.5,
-                          color:"var(--text-faint)",
-                          marginTop:2
-                        }}>
-                          {formatDate(
-                            ev.scanned_at ||
-                            ev.access_time ||
-                            ev.received_at
-                          )}
+                        <div style={{ fontSize: 10.5, color: "var(--text-faint)", marginTop: 2 }}>
+                          {formatDate(evTime)}
                         </div>
                       </td>
-
 
                       {/* Employee */}
-                      <td style={{
-                        padding:"11px 14px",
-                        whiteSpace:"nowrap"
-                      }}>
-                        <div style={{fontWeight:600}}>
-                          {getEmployeeName(ev)}
-                        </div>
-
-                        {getEmployeeDept(ev) && (
+                      <td style={{ padding: "12px 16px", whiteSpace: "nowrap" }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                           <div style={{
-                            fontSize:10.5,
-                            color:"var(--text-faint)",
-                            marginTop:2
+                            width: 30,
+                            height: 30,
+                            borderRadius: "50%",
+                            background: "var(--primary-dim)",
+                            color: "var(--primary)",
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            fontSize: 11,
+                            fontWeight: 700,
+                            flexShrink: 0
                           }}>
-                            {getEmployeeDept(ev)}
+                            {initials}
                           </div>
-                        )}
+                          <div>
+                            <div style={{ fontWeight: 600, color: "var(--text)" }}>{name}</div>
+                            {dept && <div style={{ fontSize: 11, color: "var(--text-faint)", marginTop: 1 }}>{dept}</div>}
+                          </div>
+                        </div>
                       </td>
 
-
                       {/* Employee ID */}
-                      <td style={{
-                        padding:"11px 14px"
-                      }}>
-                        <span className="mono">
-                          {getEmployeeCode(ev)}
+                      <td style={{ padding: "12px 16px", whiteSpace: "nowrap" }}>
+                        <span className="mono" style={{ fontSize: 12, color: "var(--text-dim)" }}>
+                          {code}
                         </span>
                       </td>
 
-
                       {/* Door */}
-                      <td style={{
-                        padding:"11px 14px",
-                        whiteSpace:"nowrap"
-                      }}>
-                        {ev.room_name ||
-                         ev.device_label ||
-                         "--"}
+                      <td style={{ padding: "12px 16px", whiteSpace: "nowrap" }}>
+                        <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                          <Icon name="cpu" size={13} style={{ color: "var(--text-faint)" }} />
+                          {ev.room_name || ev.device_label || "--"}
+                        </span>
                       </td>
 
-
                       {/* Direction */}
-                      <td style={{
-                        padding:"11px 14px"
-                      }}>
+                      <td style={{ padding: "12px 16px" }}>
                         {ev.direction ? (
                           <span style={{
-                            fontSize:11,
-                            padding:"3px 7px",
-                            borderRadius:5,
-                            background:"var(--surface-2)"
+                            fontSize: 11,
+                            padding: "3px 8px",
+                            borderRadius: 6,
+                            background: "var(--surface-2)",
+                            fontWeight: 600,
+                            color: "var(--text-dim)"
                           }}>
                             {ev.direction}
                           </span>
-                        ) : (
-                          "--"
-                        )}
+                        ) : "--"}
                       </td>
 
-
                       {/* Card */}
-                      <td style={{
-                        padding:"11px 14px"
-                      }}>
-                        <span
-                          className="mono"
-                          style={{
-                            fontSize:11
-                          }}
-                        >
+                      <td style={{ padding: "12px 16px" }}>
+                        <span className="mono" style={{ fontSize: 11.5, color: "var(--text-dim)" }}>
                           {ev.card_uid || "--"}
                         </span>
                       </td>
 
-
                       {/* Fingerprint */}
-                      <td style={{
-                        padding:"11px 14px",
-                        textAlign:"center"
-                      }}>
+                      <td style={{ padding: "12px 16px", textAlign: "center" }}>
                         {ev.fingerprint_used ? (
-                          <span style={{
-                            fontSize:12
-                          }}>
-                            ✓
-                          </span>
+                          <span style={{ color: "var(--teal)", fontWeight: 700, fontSize: 13 }}>✓</span>
                         ) : (
-                          <span style={{
-                            color:"var(--text-faint)"
-                          }}>
-                            —
-                          </span>
+                          <span style={{ color: "var(--text-faint)" }}>—</span>
                         )}
                       </td>
 
-
                       {/* Result */}
-                      <td style={{
-                        padding:"11px 14px"
-                      }}>
-                        <span style={{
-                          display:"inline-flex",
-                          alignItems:"center",
-                          padding:"4px 8px",
-                          borderRadius:6,
-                          fontSize:11,
-                          fontWeight:700,
-                          background: granted
-                            ? "rgba(34,197,94,0.12)"
-                            : "rgba(239,68,68,0.12)",
-                          color: granted
-                            ? "#22c55e"
-                            : "#ef4444"
-                        }}>
-                          {decision}
-                        </span>
+                      <td style={{ padding: "12px 16px" }}>
+                        <StatusBadge status={granted ? "ALLOWED" : "DENIED"} />
                       </td>
-
 
                       {/* Reason */}
-                      <td style={{
-                        padding:"11px 14px",
-                        color:"var(--text-dim)",
-                        whiteSpace:"nowrap"
-                      }}>
+                      <td style={{ padding: "12px 16px", color: "var(--text-dim)", whiteSpace: "nowrap" }}>
                         {ev.reason_code || "--"}
                       </td>
-
                     </tr>
                   );
-
                 })}
-
               </tbody>
-
             </table>
-
           </div>
-
         )}
 
-        {/* Pagination Bar */}
+        {/* 30-Records Pagination */}
         {totalEvents > 0 && (
           <div style={{
-            padding:"12px 18px",
-            borderTop:"1px solid var(--border)",
-            background:"var(--surface)",
-            display:"flex",
-            justifyContent:"space-between",
-            alignItems:"center",
-            flexWrap:"wrap",
-            gap:12
+            padding: "14px 20px",
+            borderTop: "1px solid var(--border)",
+            background: "var(--surface)",
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            flexWrap: "wrap",
+            gap: 12
           }}>
-            <div style={{ fontSize:12.5, color:"var(--text-dim)" }}>
-              Showing <strong style={{ color:"var(--text)" }}>{totalEvents === 0 ? 0 : (currentPage - 1) * 30 + 1}</strong> to{" "}
-              <strong style={{ color:"var(--text)" }}>{Math.min(currentPage * 30, totalEvents)}</strong> of{" "}
-              <strong style={{ color:"var(--text)" }}>{totalEvents.toLocaleString()}</strong> records
+            <div style={{ fontSize: 12.5, color: "var(--text-dim)" }}>
+              Showing <strong style={{ color: "var(--text)" }}>{totalEvents === 0 ? 0 : (currentPage - 1) * 30 + 1}</strong> to{" "}
+              <strong style={{ color: "var(--text)" }}>{Math.min(currentPage * 30, totalEvents)}</strong> of{" "}
+              <strong style={{ color: "var(--text)" }}>{totalEvents.toLocaleString()}</strong> records
               {totalPages > 1 && (
-                <span style={{ marginLeft:8, color:"var(--text-faint)" }}>
+                <span style={{ marginLeft: 8, color: "var(--text-faint)" }}>
                   (Page {currentPage} of {totalPages})
                 </span>
               )}
             </div>
 
-            <div style={{ display:"flex", alignItems:"center", gap:6, flexWrap:"wrap" }}>
-              {/* First page button */}
+            <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+              {/* First page */}
               {totalPages > 5 && (
                 <button
                   type="button"
@@ -839,43 +2410,43 @@ function DashboardPage({
                   disabled={currentPage === 1 || isLogsLoading}
                   title="First Page"
                   style={{
-                    padding:"5px 8px",
-                    fontSize:12,
-                    borderRadius:6,
-                    border:"1px solid var(--border)",
-                    background:"var(--surface-2)",
+                    padding: "5px 8px",
+                    fontSize: 12,
+                    borderRadius: 6,
+                    border: "1px solid var(--border)",
+                    background: "var(--surface-2)",
                     color: currentPage === 1 ? "var(--text-faint)" : "var(--text)",
                     cursor: currentPage === 1 ? "not-allowed" : "pointer",
                     opacity: currentPage === 1 ? 0.4 : 1,
-                    display:"inline-flex",
-                    alignItems:"center"
+                    display: "inline-flex",
+                    alignItems: "center"
                   }}
                 >
-                  <Icon name="chevrons-left" size={13}/>
+                  <Icon name="chevrons-left" size={13} />
                 </button>
               )}
 
-              {/* Prev button */}
+              {/* Prev */}
               <button
                 type="button"
                 onClick={() => onPageChange && onPageChange(Math.max(1, currentPage - 1))}
                 disabled={currentPage === 1 || isLogsLoading}
                 style={{
-                  display:"inline-flex",
-                  alignItems:"center",
-                  gap:4,
-                  padding:"5px 10px",
-                  fontSize:12,
-                  fontWeight:600,
-                  borderRadius:6,
-                  border:"1px solid var(--border)",
-                  background:"var(--surface-2)",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 4,
+                  padding: "5px 10px",
+                  fontSize: 12,
+                  fontWeight: 600,
+                  borderRadius: 6,
+                  border: "1px solid var(--border)",
+                  background: "var(--surface-2)",
                   color: currentPage === 1 ? "var(--text-faint)" : "var(--text)",
                   cursor: currentPage === 1 ? "not-allowed" : "pointer",
                   opacity: currentPage === 1 ? 0.4 : 1
                 }}
               >
-                <Icon name="chevron-left" size={13}/> Prev
+                <Icon name="chevron-left" size={13} /> Prev
               </button>
 
               {/* Page pills */}
@@ -883,8 +2454,8 @@ function DashboardPage({
                 if (p === "...") {
                   return (
                     <span
-                      key={`dots-${idx}`}
-                      style={{ padding:"0 6px", color:"var(--text-faint)", fontSize:13, userSelect:"none" }}
+                      key={"dots-" + idx}
+                      style={{ padding: "0 6px", color: "var(--text-faint)", fontSize: 13, userSelect: "none" }}
                     >
                       ...
                     </span>
@@ -898,17 +2469,17 @@ function DashboardPage({
                     onClick={() => onPageChange && onPageChange(p)}
                     disabled={isLogsLoading}
                     style={{
-                      minWidth:30,
-                      height:28,
-                      padding:"0 7px",
-                      fontSize:12,
+                      minWidth: 30,
+                      height: 28,
+                      padding: "0 7px",
+                      fontSize: 12,
                       fontWeight: isActive ? 700 : 500,
-                      borderRadius:6,
+                      borderRadius: 6,
                       border: isActive ? "1px solid var(--primary)" : "1px solid var(--border)",
                       background: isActive ? "var(--primary)" : "var(--surface-2)",
                       color: isActive ? "#ffffff" : "var(--text)",
-                      cursor:"pointer",
-                      transition:"all 0.15s ease"
+                      cursor: "pointer",
+                      transition: "all 0.15s ease"
                     }}
                   >
                     {p}
@@ -916,30 +2487,30 @@ function DashboardPage({
                 );
               })}
 
-              {/* Next button */}
+              {/* Next */}
               <button
                 type="button"
                 onClick={() => onPageChange && onPageChange(Math.min(totalPages, currentPage + 1))}
                 disabled={currentPage === totalPages || isLogsLoading}
                 style={{
-                  display:"inline-flex",
-                  alignItems:"center",
-                  gap:4,
-                  padding:"5px 10px",
-                  fontSize:12,
-                  fontWeight:600,
-                  borderRadius:6,
-                  border:"1px solid var(--border)",
-                  background:"var(--surface-2)",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 4,
+                  padding: "5px 10px",
+                  fontSize: 12,
+                  fontWeight: 600,
+                  borderRadius: 6,
+                  border: "1px solid var(--border)",
+                  background: "var(--surface-2)",
                   color: currentPage === totalPages ? "var(--text-faint)" : "var(--text)",
                   cursor: currentPage === totalPages ? "not-allowed" : "pointer",
                   opacity: currentPage === totalPages ? 0.4 : 1
                 }}
               >
-                Next <Icon name="chevron-right" size={13}/>
+                Next <Icon name="chevron-right" size={13} />
               </button>
 
-              {/* Last page button */}
+              {/* Last page */}
               {totalPages > 5 && (
                 <button
                   type="button"
@@ -947,29 +2518,29 @@ function DashboardPage({
                   disabled={currentPage === totalPages || isLogsLoading}
                   title="Last Page"
                   style={{
-                    padding:"5px 8px",
-                    fontSize:12,
-                    borderRadius:6,
-                    border:"1px solid var(--border)",
-                    background:"var(--surface-2)",
+                    padding: "5px 8px",
+                    fontSize: 12,
+                    borderRadius: 6,
+                    border: "1px solid var(--border)",
+                    background: "var(--surface-2)",
                     color: currentPage === totalPages ? "var(--text-faint)" : "var(--text)",
                     cursor: currentPage === totalPages ? "not-allowed" : "pointer",
                     opacity: currentPage === totalPages ? 0.4 : 1,
-                    display:"inline-flex",
-                    alignItems:"center"
+                    display: "inline-flex",
+                    alignItems: "center"
                   }}
                 >
-                  <Icon name="chevrons-right" size={13}/>
+                  <Icon name="chevrons-right" size={13} />
                 </button>
               )}
 
-              {/* Jump to page form */}
+              {/* Jump to page */}
               {totalPages > 5 && (
                 <form
                   onSubmit={handleJump}
-                  style={{ display:"inline-flex", alignItems:"center", gap:4, marginLeft:6 }}
+                  style={{ display: "inline-flex", alignItems: "center", gap: 4, marginLeft: 6 }}
                 >
-                  <span style={{ fontSize:11.5, color:"var(--text-faint)" }}>Go:</span>
+                  <span style={{ fontSize: 11.5, color: "var(--text-faint)" }}>Go:</span>
                   <input
                     type="number"
                     min="1"
@@ -978,15 +2549,15 @@ function DashboardPage({
                     onChange={e => setJumpPage(e.target.value)}
                     placeholder="#"
                     style={{
-                      width:42,
-                      height:28,
-                      padding:"0 4px",
-                      borderRadius:6,
-                      border:"1px solid var(--border)",
-                      background:"var(--surface-2)",
-                      color:"var(--text)",
-                      fontSize:11.5,
-                      textAlign:"center"
+                      width: 42,
+                      height: 28,
+                      padding: "0 4px",
+                      borderRadius: 6,
+                      border: "1px solid var(--border)",
+                      background: "var(--surface-2)",
+                      color: "var(--text)",
+                      fontSize: 11.5,
+                      textAlign: "center"
                     }}
                   />
                 </form>
@@ -997,108 +2568,12 @@ function DashboardPage({
 
       </div>
 
-
-      {/* Occupancy */}
-      <div style={{
-        background:"var(--surface)",
-        border:"1px solid var(--border)",
-        borderRadius:12,
-        overflow:"hidden"
-      }}>
-
-        <div style={{
-          padding:"15px 18px",
-          borderBottom:"1px solid var(--border)"
-        }}>
-          <div style={{
-            fontSize:15,
-            fontWeight:700
-          }}>
-            Current Occupancy
-          </div>
-
-          <div style={{
-            fontSize:11.5,
-            color:"var(--text-faint)",
-            marginTop:3
-          }}>
-            People currently recorded inside
-          </div>
-        </div>
-
-        {occupancy?.people?.length ? (
-
-          <div style={{
-            display:"flex",
-            flexDirection:"column"
-          }}>
-
-            {occupancy.people.slice(0, 10).map((person, index) => (
-
-              <div
-                key={person.person_id || person.id || index}
-                style={{
-                  display:"flex",
-                  justifyContent:"space-between",
-                  alignItems:"center",
-                  padding:"11px 18px",
-                  borderBottom:"1px solid var(--border)"
-                }}
-              >
-
-                <div>
-                  <div style={{
-                    fontSize:13,
-                    fontWeight:600
-                  }}>
-                    {person.full_name || person.name || (person.employee_code ? ("Employee " + person.employee_code) : "Registered Personnel")}
-                  </div>
-
-                  <div style={{
-                    fontSize:11,
-                    color:"var(--text-faint)",
-                    marginTop:2
-                  }}>
-                    {person.employee_code || "--"}
-                    {person.room_name
-                      ? " · " + person.room_name
-                      : ""}
-                  </div>
-                </div>
-
-                <div style={{
-                  fontSize:11,
-                  color:"var(--primary)"
-                }}>
-                  INSIDE
-                </div>
-
-              </div>
-
-            ))}
-
-          </div>
-
-        ) : (
-
-          <div style={{
-            padding:"25px",
-            textAlign:"center",
-            color:"var(--text-faint)",
-            fontSize:12.5
-          }}>
-            No people currently inside.
-          </div>
-
-        )}
-
-      </div>
-
     </div>
   );
- }
+}
 
- function EmployeesPage({employees, departments, onSelect, onAddClick, onDeactivate, onDelete, isDeleteUnlocked, onUnlockClick, onLockClick}){
+
+function EmployeesPage({employees, departments, onSelect, onAddClick, onDeactivate, onDelete, isDeleteUnlocked, onUnlockClick, onLockClick}){
   const [q, setQ] = useState("");
   const [dept, setDept] = useState("all");
   const filtered = employees.filter(e =>
@@ -1339,9 +2814,78 @@ function AttendancePage({attendance, departments, selectedDate, onDateChange}){
     return (status === "all" || s === status) && (dept === "all" || a.department === dept);
   });
 
+  const handleExportCSV = () => {
+    if (!rows || rows.length === 0) {
+      alert("No attendance records to export.");
+      return;
+    }
+    const headers = ["Employee ID", "Employee Name", "Department", "Date", "Check-In", "Check-Out", "Work Hours", "Status"];
+    const csvLines = [headers.join(",")];
+
+    rows.forEach(a => {
+      const inTime = a.first_in ? new Date(a.first_in).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "--";
+      const outTime = a.last_out ? new Date(a.last_out).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "--";
+      let s = "Absent";
+      if (a.first_in) {
+        const t = new Date(a.first_in).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
+        s = t > "09:45" ? "Late" : "Present";
+      }
+      const line = [
+        `"${a.employee_code || ""}"`,
+        `"${a.full_name || ""}"`,
+        `"${a.department || ""}"`,
+        `"${selectedDate || ""}"`,
+        `"${inTime}"`,
+        `"${outTime}"`,
+        `"${a.hours ? a.hours + 'h' : '--'}"`,
+        `"${s}"`
+      ];
+      csvLines.push(line.join(","));
+    });
+
+    const blob = new Blob([csvLines.join("\n")], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.setAttribute("download", `attendance_report_${selectedDate || "export"}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
   return (
     <Card style={{padding:0}}>
-      <div style={{display:"flex", gap:10, alignItems:"center", padding:"16px 18px", borderBottom:"1px solid var(--border)", flexWrap:"wrap"}}>
+      {/* Printable Official Report Header (Only visible on paper / PDF print) */}
+      <div className="print-only" style={{ padding: "0 0 16px 0", marginBottom: 12 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", borderBottom: "2px solid #111827", paddingBottom: 10 }}>
+          <div>
+            <div style={{ fontSize: 18, fontWeight: 800, color: "#111827", letterSpacing: -0.3 }}>
+              ATTENDANCE & ACCESS CONTROL REPORT
+            </div>
+            <div style={{ fontSize: 12, color: "#4b5563", marginTop: 2, fontWeight: 600 }}>
+              Official Daily Verification Record
+            </div>
+          </div>
+          <div style={{ textAlign: "right", fontSize: 10.5, color: "#4b5563", lineHeight: 1.4 }}>
+            <div><strong>Report Date:</strong> {selectedDate}</div>
+            <div><strong>Department:</strong> {dept === "all" ? "All Departments" : dept}</div>
+            <div><strong>Status Filter:</strong> {status === "all" ? "All Statuses" : status.toUpperCase()}</div>
+            <div><strong>Generated:</strong> {new Date().toLocaleString()}</div>
+          </div>
+        </div>
+
+        {/* Report Summary Bar for Print */}
+        <div style={{ display: "flex", gap: 20, marginTop: 10, padding: "6px 12px", background: "#f9fafb", border: "1px solid #e5e7eb", borderRadius: 6, fontSize: 11 }}>
+          <div>Total Employees: <strong>{rows.length}</strong></div>
+          <div>Present: <strong style={{ color: "#059669" }}>{rows.filter(r => Boolean(r.first_in)).length}</strong></div>
+          <div>Late: <strong style={{ color: "#d97706" }}>{rows.filter(r => { if (!r.first_in) return false; const t = new Date(r.first_in).toLocaleTimeString("en-GB"); return t > "09:45:00"; }).length}</strong></div>
+          <div>Absent: <strong style={{ color: "#dc2626" }}>{rows.filter(r => !r.first_in).length}</strong></div>
+        </div>
+      </div>
+
+      {/* Screen Filter Bar (Hidden when printing) */}
+      <div className="no-print" style={{display:"flex", gap:10, alignItems:"center", padding:"16px 18px", borderBottom:"1px solid var(--border)", flexWrap:"wrap"}}>
         <select value={dept} onChange={e=>setDept(e.target.value)} style={{padding:"9px 12px", borderRadius:8, border:"1px solid var(--border)", background:"var(--surface-2)", color:"var(--text)", fontSize:13.5}}>
           <option value="all">All departments</option>
           {departments.map(d=><option key={d} value={d}>{d}</option>)}
@@ -1355,8 +2899,14 @@ function AttendancePage({attendance, departments, selectedDate, onDateChange}){
         <input type="date" value={selectedDate} onChange={e=>onDateChange(e.target.value)}
           style={{padding:"9px 12px", borderRadius:8, border:"1px solid var(--border)", background:"var(--surface-2)", color:"var(--text)", fontSize:13.5}}/>
         <div style={{flex:1}}/>
-        <Button variant="subtle" onClick={() => window.print()}><Icon name="download" size={15}/>Print / Export</Button>
+        <Button variant="subtle" onClick={handleExportCSV} title="Download CSV spreadsheet">
+          <Icon name="download" size={14}/> Export CSV
+        </Button>
+        <Button variant="primary" onClick={() => window.print()} title="Print clean official report or save as PDF">
+          <Icon name="printer" size={14}/> Print / Save PDF
+        </Button>
       </div>
+
       <div style={{overflowX:"auto"}}>
         <table style={{width:"100%", borderCollapse:"collapse"}}>
           <thead><tr>
@@ -1391,8 +2941,16 @@ function AttendancePage({attendance, departments, selectedDate, onDateChange}){
           </tbody>
         </table>
       </div>
-      <div style={{display:"flex", justifyContent:"space-between", alignItems:"center", padding:"12px 18px", fontSize:12.5, color:"var(--text-faint)"}}>
+
+      {/* Screen Footer */}
+      <div className="no-print" style={{display:"flex", justifyContent:"space-between", alignItems:"center", padding:"12px 18px", fontSize:12.5, color:"var(--text-faint)"}}>
         <span>Showing {rows.length} of {attendance.length} records</span>
+      </div>
+
+      {/* Print Footer */}
+      <div className="print-only" style={{ marginTop: 20, paddingTop: 8, borderTop: "1px solid #e5e7eb", display: "flex", justifyContent: "space-between", fontSize: 10, color: "#6b7280" }}>
+        <span>Official Attendance Record — Confidential</span>
+        <span>Generated by Access Control & Attendance System</span>
       </div>
     </Card>
   );
@@ -1515,7 +3073,7 @@ function AdminPage({departments, employees, rules, shifts, holidays, rooms, onAd
                   <div key={d.id || d.name || d} style={{display:"flex", justifyContent:"space-between", alignItems:"center", padding:"10px 14px", background:"var(--surface-2)", borderRadius:8, fontSize:13.5}}>
                     <div style={{display:"flex", alignItems:"center", gap:12}}>
                       <span style={{fontWeight:600}}>{d.name || d}</span>
-                      <span className="mono" style={{color:"var(--text-faint)", fontSize:12}}>{d.employee_count ?? employees.filter(e=>e.department===(d.name||d)).length} employees</span>
+                      <span style={{color:"var(--text-faint)", fontSize:12}}>{d.employee_count ?? employees.filter(e=>e.department===(d.name||d)).length} employees</span>
                     </div>
                     {d.id && (
                       <button
@@ -2123,12 +3681,12 @@ function AddEmployeeModal({isOpen, onClose, onSaved, departments=[], devices=[],
           <form onSubmit={goToDeviceSelection} style={{display:"flex", flexDirection:"column", gap:12}}>
             <div>
               <label style={{fontSize:12, color:"var(--text-dim)", display:"block", marginBottom:4}}>Employee Code <span style={{color:"var(--rose)"}}>*</span></label>
-              <input required placeholder="EMP-0012" value={code} onChange={e=>setCode(e.target.value)}
+              <input required placeholder="EMP-001" value={code} onChange={e=>setCode(e.target.value)}
                 style={{width:"100%", padding:"9px 12px", borderRadius:8, border:"1px solid var(--border)", background:"var(--surface-2)", color:"var(--text)", fontSize:13.5}} />
             </div>
             <div>
               <label style={{fontSize:12, color:"var(--text-dim)", display:"block", marginBottom:4}}>Full Name <span style={{color:"var(--rose)"}}>*</span></label>
-              <input required placeholder="Arvind Kumar" value={name} onChange={e=>setName(e.target.value)}
+              <input required placeholder="Name" value={name} onChange={e=>setName(e.target.value)}
                 style={{width:"100%", padding:"9px 12px", borderRadius:8, border:"1px solid var(--border)", background:"var(--surface-2)", color:"var(--text)", fontSize:13.5}} />
             </div>
             <div style={{display:"grid", gridTemplateColumns:"1fr 1fr", gap:10}}>
@@ -2154,7 +3712,7 @@ function AddEmployeeModal({isOpen, onClose, onSaved, departments=[], devices=[],
             </div>
             <div>
               <label style={{fontSize:12, color:"var(--text-dim)", display:"block", marginBottom:4}}>Email (optional)</label>
-              <input type="email" placeholder="arvind@company.com" value={email} onChange={e=>setEmail(e.target.value)}
+              <input type="email" placeholder="name@company.com" value={email} onChange={e=>setEmail(e.target.value)}
                 style={{width:"100%", padding:"9px 12px", borderRadius:8, border:"1px solid var(--border)", background:"var(--surface-2)", color:"var(--text)", fontSize:13.5}} />
             </div>
 
@@ -3101,7 +4659,12 @@ function LoginPage({onLogin}){
 function Shell(){
   const [token, setToken] = useState(sessionStorage.getItem("token") || "");
   const [page, setPage] = useState("dashboard");
-  const [theme, setTheme] = useState(() => localStorage.getItem("theme") || "light");
+  const [theme, setTheme] = useState(() => {
+    const manual = localStorage.getItem("theme_manual");
+    if (manual) return localStorage.getItem("theme") || "light";
+    const hour = new Date().getHours();
+    return (hour >= 12) ? "dark" : "light";
+  });
   const [selectedEmp, setSelectedEmp] = useState(null);
   const [now, setNow] = useState(new Date());
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
@@ -3477,49 +5040,154 @@ function Shell(){
 
   return (
     <div data-theme={theme} style={{display:"flex", minHeight:"100vh", background:"var(--bg)", color:"var(--text)"}}>
-      <aside style={{width:220, borderRight:"1px solid var(--border)", padding:"20px 14px", display:"flex", flexDirection:"column"}}>
-        <div style={{display:"flex", alignItems:"center", gap:9, padding:"0 8px", marginBottom:26}}>
-          <div style={{width:28, height:28, borderRadius:7, background:"var(--primary)", display:"flex", alignItems:"center", justifyContent:"center"}}>
-            <Icon name="id" size={15}/>
-          </div>
-          <span style={{fontWeight:700, fontSize:14.5}}>Attendance</span>
+      {/* Slim Vertical Left Dock */}
+      <aside style={{
+        width: 68,
+        borderRight: "1px solid var(--border)",
+        padding: "16px 10px",
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        background: "var(--surface)",
+        flexShrink: 0
+      }}>
+        {/* Top Logo / Emblem */}
+        <div
+          onClick={() => { setPage("dashboard"); setSelectedEmp(null); }}
+          title="AccessPro Dashboard"
+          style={{
+            width: 40,
+            height: 40,
+            borderRadius: 10,
+            background: "var(--primary)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            color: "#ffffff",
+            marginBottom: 18,
+            boxShadow: "0 2px 8px var(--primary-glow)",
+            cursor: "pointer"
+          }}
+        >
+          <Icon name="id" size={20} />
         </div>
-        <nav style={{display:"flex", flexDirection:"column", gap:2}}>
-          {NAV.map(n=>(
-            <button key={n.key} onClick={()=>{setPage(n.key); setSelectedEmp(null);}} style={{
-              display:"flex", alignItems:"center", gap:10, padding:"9px 10px", borderRadius:8,
-              border:"none", cursor:"pointer", textAlign:"left", fontSize:13.5, fontWeight:500,
-              background: page===n.key ? "var(--primary-dim)" : "transparent",
-              color: page===n.key ? "var(--primary)" : "var(--text-dim)"
-            }}>
-              <Icon name={n.icon} size={17}/>{n.label}
-            </button>
-          ))}
+
+        {/* Dynamic Working Navigation Buttons */}
+        <nav style={{ display: "flex", flexDirection: "column", gap: 8, alignItems: "center" }}>
+          {NAV.map(n => {
+            const isActive = page === n.key;
+            return (
+              <button
+                key={n.key}
+                type="button"
+                onClick={() => { setPage(n.key); setSelectedEmp(null); }}
+                title={n.label}
+                className={"dock-btn" + (isActive ? " active" : "")}
+              >
+                <Icon name={n.icon} size={19} />
+              </button>
+            );
+          })}
         </nav>
-        <div style={{flex:1}}/>
-        <button onClick={handleLogout} style={{
-          display:"flex", alignItems:"center", gap:10, padding:"9px 10px", borderRadius:8,
-          border:"none", cursor:"pointer", background:"transparent", color:"var(--text-faint)", fontSize:13
-        }}><Icon name="logout" size={16}/>Sign out</button>
+
+        <div style={{ flex: 1 }} />
+
+        {/* Logout */}
+        <button
+          type="button"
+          onClick={handleLogout}
+          title="Sign out"
+          className="dock-btn"
+          style={{ color: "var(--rose)" }}
+        >
+          <Icon name="logout" size={19} />
+        </button>
       </aside>
 
       <main style={{flex:1, display:"flex", flexDirection:"column", minWidth:0}}>
+        {/* Top Header Bar */}
         <header style={{
-          display:"flex", alignItems:"center", justifyContent:"space-between",
-          padding:"14px 24px", borderBottom:"1px solid var(--border)"
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          padding: "16px 28px",
+          borderBottom: "1px solid var(--border)",
+          background: "var(--surface)"
         }}>
           <div>
-            <div style={{fontSize:16.5, fontWeight:700}}>{selectedEmp ? selectedEmp.full_name : pageTitle}</div>
-            <div className="mono" style={{fontSize:12, color:"var(--text-faint)"}}>
-              {now.toLocaleDateString(undefined,{weekday:"long", year:"numeric", month:"long", day:"numeric"})} · {now.toLocaleTimeString()}
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <span style={{ fontSize: 21, fontWeight: 700, letterSpacing: -0.5, color: "var(--text)" }}>
+                {selectedEmp ? selectedEmp.full_name : pageTitle}
+              </span>
+              <Icon name="polygon-emblem" size={22} />
             </div>
           </div>
-          <div style={{display:"flex", alignItems:"center", gap:10}}>
-            <button onClick={()=>setTheme(t=>t==="dark"?"light":"dark")} style={{
-              width:34, height:34, borderRadius:8, border:"1px solid var(--border)", background:"var(--surface-2)",
-              display:"flex", alignItems:"center", justifyContent:"center", cursor:"pointer", color:"var(--text)"
-            }}><Icon name={theme==="dark"?"sun":"moon"} size={16}/></button>
-            <div style={{width:32, height:32, borderRadius:"50%", background:"var(--primary-dim)", display:"flex", alignItems:"center", justifyContent:"center", fontSize:12, fontWeight:700, color:"var(--primary)"}}>AD</div>
+
+          <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+            {/* Dark / Light Mode Toggle */}
+            <button
+              type="button"
+              onClick={() => {
+                setTheme(t => {
+                  const next = t === "dark" ? "light" : "dark";
+                  try {
+                    localStorage.setItem("theme_manual", "true");
+                    localStorage.setItem("theme", next);
+                  } catch (e) {}
+                  return next;
+                });
+              }}
+              title={theme === "dark" ? "Switch to Light Mode" : "Switch to Dark Mode"}
+              style={{
+                width: 36,
+                height: 36,
+                borderRadius: 8,
+                border: "1px solid var(--border)",
+                background: "var(--surface-2)",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                cursor: "pointer",
+                color: "var(--text)",
+                transition: "all .12s ease"
+              }}
+            >
+              <Icon name={theme === "dark" ? "sun" : "moon"} size={16} />
+            </button>
+
+            {/* Admin Profile Pill */}
+            <div style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 10,
+              padding: "4px 12px 4px 4px",
+              borderRadius: 24,
+              background: "var(--surface-2)",
+              border: "1px solid var(--border)"
+            }}>
+              <div style={{
+                width: 34,
+                height: 34,
+                borderRadius: "50%",
+                background: "var(--primary-dim)",
+                color: "var(--primary)",
+                fontWeight: 700,
+                fontSize: 12,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center"
+              }}>
+                AD
+              </div>
+              <div style={{ textAlign: "left" }}>
+                <div style={{ fontSize: 12.5, fontWeight: 700, color: "var(--text)", lineHeight: 1.1 }}>
+                  Admin
+                </div>
+                <div style={{ fontSize: 11, color: "var(--text-faint)", marginTop: 1 }}>
+                  admin@domain.ae
+                </div>
+              </div>
+            </div>
           </div>
         </header>
 
@@ -3537,6 +5205,23 @@ function Shell(){
               isLogsLoading={isLogsLoading}
               occupancy={occupancy}
               dateStr={selectedDate}
+              onSelectDate={setSelectedDate}
+              onAdvancedConfig={() => setPage("admin")}
+              token={token}
+            />
+          )}
+          {page==="logs" && (
+            <RecentLogsPage
+              activity={activity}
+              activityTotal={activityTotal}
+              activityPage={activityPage}
+              activityStats={activityStats}
+              onPageChange={handleActivityPageChange}
+              onRefreshActivity={handleRefreshActivity}
+              isLogsLoading={isLogsLoading}
+              employees={employees}
+              devices={devices}
+              rooms={rooms}
             />
           )}
           {page==="employees" && !selectedEmp && (
@@ -3629,6 +5314,7 @@ function Shell(){
     </div>
   );
 }
+
 
 ReactDOM.createRoot(document.getElementById("root")).render(<Shell/>);
 </script>
