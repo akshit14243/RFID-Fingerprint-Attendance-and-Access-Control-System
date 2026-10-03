@@ -1,0 +1,5 @@
+*.html linguist-detectable=true
+*.js linguist-detectable=true
+*.sql linguist-detectable=true
+
+web/index.html linguist-language=JavaScript
