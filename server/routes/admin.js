@@ -289,20 +289,36 @@ router.get("/devices", requireUser, async (_req, res, next) => {
 router.post("/devices", requireUser, requireAdmin, async (req, res, next) => {
   try {
     const s = z.object({
-      device_key: z.string().min(8),
+      device_key: z.string().min(4),
       device_label: z.string().min(1),
       room_id: z.number().int(),
       purpose: z.enum(["DOOR", "ATTENDANCE"]).default("DOOR"),
       source: z.enum(["NATIVE", "LEGACY"]).default("NATIVE"),
     }).safeParse(req.body);
     if (!s.success) return bad(res, s.error);
-    res.status(201).json(
-      await one(
-        `INSERT INTO devices (device_key, device_label, room_id, purpose, source)
-         VALUES ($1,$2,$3,$4,$5) RETURNING *`,
-        [s.data.device_key, s.data.device_label, s.data.room_id, s.data.purpose, s.data.source]),
+
+    const cleanKey = s.data.device_key.trim();
+    const existing = await one("SELECT id, device_label FROM devices WHERE LOWER(device_key) = LOWER($1)", [cleanKey]);
+    if (existing) {
+      return res.status(409).json({
+        error: "duplicate_device_key",
+        message: `Device key '${cleanKey}' is already registered (assigned to "${existing.device_label}"). Device keys must be unique.`,
+      });
+    }
+
+    const row = await one(
+      `INSERT INTO devices (device_key, device_label, room_id, purpose, source)
+       VALUES ($1, $2, $3, $4, $5) RETURNING *`,
+      [cleanKey, s.data.device_label.trim(), s.data.room_id, s.data.purpose, s.data.source],
     );
+    res.status(201).json(row);
   } catch (err) {
+    if (err.code === "23505") {
+      return res.status(409).json({
+        error: "duplicate_device_key",
+        message: `Device key '${req.body?.device_key}' is already registered. Device keys must be unique.`,
+      });
+    }
     next(err);
   }
 });
@@ -325,6 +341,16 @@ router.delete("/devices/:id", requireUser, requireAdmin, async (req, res, next) 
 
 router.put("/devices/:id", requireUser, requireAdmin, async (req, res, next) => {
   try {
+    if (req.body.device_key !== undefined) {
+      const current = await one("SELECT device_key FROM devices WHERE id = $1", [req.params.id]);
+      if (current && req.body.device_key.trim().toLowerCase() !== current.device_key.toLowerCase()) {
+        return res.status(400).json({
+          error: "device_key_locked",
+          message: `Device key '${current.device_key}' is permanently locked and cannot be changed. Each hardware board is registered with a singular key.`,
+        });
+      }
+    }
+
     const s = z.object({
       device_label: z.string().min(1).optional(),
       room_id: z.number().int().optional(),
@@ -332,6 +358,7 @@ router.put("/devices/:id", requireUser, requireAdmin, async (req, res, next) => 
       is_active: z.boolean().optional(),
     }).safeParse(req.body);
     if (!s.success) return bad(res, s.error);
+
     const row = await one(
       `UPDATE devices SET
          device_label = COALESCE($2, device_label),
@@ -339,7 +366,7 @@ router.put("/devices/:id", requireUser, requireAdmin, async (req, res, next) => 
          purpose      = COALESCE($4, purpose),
          is_active    = COALESCE($5, is_active)
        WHERE id = $1 RETURNING *`,
-      [req.params.id, s.data.device_label ?? null, s.data.room_id ?? null, s.data.purpose ?? null, s.data.is_active ?? null],
+      [req.params.id, s.data.device_label?.trim() ?? null, s.data.room_id ?? null, s.data.purpose ?? null, s.data.is_active ?? null],
     );
     if (!row) return res.status(404).json({ error: "not_found" });
     res.json(row);
