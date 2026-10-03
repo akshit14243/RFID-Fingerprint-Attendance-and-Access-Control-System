@@ -1,0 +1,22 @@
+# =============================================================================
+# GitHub Linguist Language Detection Configuration
+# =============================================================================
+# Force GitHub to detect HTML, JavaScript, CSS, and SQL in repository statistics
+*.html linguist-detectable=true
+*.js linguist-detectable=true
+*.css linguist-detectable=true
+*.sql linguist-detectable=true
+
+# Classify the single-page application dashboard as JavaScript
+web/index.html linguist-language=JavaScript
+
+# =============================================================================
+# Git Line Ending Normalization (Cross-platform Windows/Linux)
+# =============================================================================
+* text=auto eol=lf
+*.js text eol=lf
+*.html text eol=lf
+*.css text eol=lf
+*.json text eol=lf
+*.sql text eol=lf
+*.md text eol=lf
