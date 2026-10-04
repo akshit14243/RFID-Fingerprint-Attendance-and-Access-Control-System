@@ -3270,14 +3270,16 @@ function DevicesPage({devices, rooms, onAddDevice, onEditDevice, onDeleteDevice,
   );
 }
 
-function AdminPage({departments, employees, rules, shifts, holidays, rooms, onAddDepartment, onDeleteDepartment, onAddRule, onDeleteRule, onAddShift, onDeleteShift, onAddHoliday, onDeleteHoliday}){
-  const [tab, setTab] = useState("departments");
+function AdminPage({departments, employees, rules, shifts, holidays, rooms, devices, onAddDepartment, onDeleteDepartment, onAddRule, onDeleteRule, onAddShift, onDeleteShift, onAddHoliday, onDeleteHoliday, onAddRoom, onDeleteRoom}){
+  const [tab, setTab] = useState("doors");
+  const [isDoorModalOpen, setIsDoorModalOpen] = useState(false);
   const [isDeptModalOpen, setIsDeptModalOpen] = useState(false);
   const [isRuleModalOpen, setIsRuleModalOpen] = useState(false);
   const [isShiftModalOpen, setIsShiftModalOpen] = useState(false);
   const [isHolidayModalOpen, setIsHolidayModalOpen] = useState(false);
 
   const tabs = [
+    {key:"doors", label:"Installed Doors"},
     {key:"departments", label:"Departments"},
     {key:"rules", label:"Access Rules"},
     {key:"hours", label:"Working hours"},
@@ -3286,16 +3288,124 @@ function AdminPage({departments, employees, rules, shifts, holidays, rooms, onAd
 
   return (
     <Card style={{padding:0}}>
-      <div style={{display:"flex", borderBottom:"1px solid var(--border)"}}>
+      <div style={{display:"flex", borderBottom:"1px solid var(--border)", overflowX:"auto"}}>
         {tabs.map(t=>(
           <button key={t.key} onClick={()=>setTab(t.key)} style={{
             padding:"13px 18px", background:"none", border:"none", cursor:"pointer",
             fontSize:13.5, fontWeight:600, color: tab===t.key?"var(--primary)":"var(--text-dim)",
-            borderBottom: tab===t.key ? "2px solid var(--primary)" : "2px solid transparent"
+            borderBottom: tab===t.key ? "2px solid var(--primary)" : "2px solid transparent",
+            whiteSpace:"nowrap"
           }}>{t.label}</button>
         ))}
       </div>
       <div style={{padding:20}}>
+        {tab==="doors" && (
+          <div>
+            <div style={{display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:16, flexWrap:"wrap", gap:10}}>
+              <div>
+                <div style={{fontSize:14.5, fontWeight:700, color:"var(--text)"}}>Physical Doors &amp; Access Points ({rooms.length})</div>
+                <div style={{fontSize:12.5, color:"var(--text-dim)", marginTop:2}}>Doors, gates, and turnstiles where RFID and biometric hardware readers are installed.</div>
+              </div>
+              <Button variant="primary" onClick={()=>setIsDoorModalOpen(true)}><Icon name="plus" size={14}/>Add door</Button>
+            </div>
+            <div style={{display:"grid", gridTemplateColumns:"repeat(auto-fit, minmax(320px, 1fr))", gap:14}}>
+              {rooms.length === 0 ? (
+                <div style={{color:"var(--text-dim)", fontSize:13}}>No installed doors configured yet. Click "Add door" to register one.</div>
+              ) : (
+                rooms.map(r=>{
+                  const assignedDevices = (devices || []).filter(d => d.room_id === r.id);
+                  const assignedRules = (rules || []).filter(rule => rule.room_id === r.id);
+                  return (
+                    <div key={r.id} style={{
+                      padding:"14px 16px",
+                      background:"var(--surface-2)",
+                      borderRadius:10,
+                      border:"1px solid var(--border)",
+                      display:"flex",
+                      flexDirection:"column",
+                      justifyContent:"space-between",
+                      gap:12
+                    }}>
+                      <div>
+                        <div style={{display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:8}}>
+                          <div style={{display:"flex", alignItems:"center", gap:8}}>
+                            <span style={{fontSize:18}}>🚪</span>
+                            <div>
+                              <div style={{fontWeight:700, fontSize:14.5, color:"var(--text)"}}>{r.room_name}</div>
+                              <div style={{fontSize:11.5, color:"var(--text-dim)", marginTop:1}}>Door ID: #{r.id}</div>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Connected Reader Details */}
+                        <div style={{fontSize:12.5, color:"var(--text-dim)", marginTop:10}}>
+                          <div style={{marginBottom:5, fontWeight:600, fontSize:11.5, color:"var(--text-faint)", textTransform:"uppercase", letterSpacing:0.5}}>
+                            Connected Readers ({assignedDevices.length})
+                          </div>
+                          {assignedDevices.length === 0 ? (
+                            <div style={{fontStyle:"italic", color:"var(--text-dim)", fontSize:12}}>No hardware reader attached.</div>
+                          ) : (
+                            <div style={{display:"flex", flexWrap:"wrap", gap:6}}>
+                              {assignedDevices.map(dev => (
+                                <span key={dev.id} style={{
+                                  display:"inline-flex",
+                                  alignItems:"center",
+                                  gap:5,
+                                  background:"var(--surface)",
+                                  border:"1px solid var(--border)",
+                                  padding:"3px 8px",
+                                  borderRadius:6,
+                                  fontSize:12,
+                                  fontWeight:500
+                                }}>
+                                  <span style={{
+                                    width:7,
+                                    height:7,
+                                    borderRadius:"50%",
+                                    background: dev.online ? "var(--teal)" : "var(--text-dim)",
+                                    display:"inline-block"
+                                  }} />
+                                  <span className="mono">{dev.device_key || dev.device_label}</span>
+                                  <span style={{fontSize:10.5, color:"var(--text-faint)"}}>({dev.purpose || "DOOR"})</span>
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+
+                        <div style={{fontSize:12, color:"var(--text-faint)", marginTop:10}}>
+                          <span>{assignedRules.length} access rule{assignedRules.length === 1 ? "" : "s"} applied</span>
+                        </div>
+                      </div>
+
+                      <div style={{display:"flex", justifyContent:"flex-end", borderTop:"1px solid var(--border)", paddingTop:10, marginTop:4}}>
+                        <button
+                          type="button"
+                          onClick={()=>onDeleteRoom && onDeleteRoom(r.id, r.room_name)}
+                          style={{
+                            background:"none",
+                            border:"none",
+                            cursor:"pointer",
+                            color:"var(--rose)",
+                            display:"inline-flex",
+                            alignItems:"center",
+                            gap:4,
+                            fontSize:12,
+                            fontWeight:600
+                          }}
+                          title="Delete door"
+                        >
+                          <Icon name="trash" size={13}/> Delete door
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          </div>
+        )}
+
         {tab==="departments" && (
           <div>
             <div style={{display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:14}}>
@@ -3426,6 +3536,7 @@ function AdminPage({departments, employees, rules, shifts, holidays, rooms, onAd
         )}
       </div>
 
+      <AddDoorModal isOpen={isDoorModalOpen} onClose={()=>setIsDoorModalOpen(false)} onSave={onAddRoom} />
       <AddDepartmentModal isOpen={isDeptModalOpen} onClose={()=>setIsDeptModalOpen(false)} onSave={onAddDepartment} />
       <AddRuleModal isOpen={isRuleModalOpen} onClose={()=>setIsRuleModalOpen(false)} onSave={onAddRule} rooms={rooms} departments={departments} employees={employees} />
       <AddShiftModal isOpen={isShiftModalOpen} onClose={()=>setIsShiftModalOpen(false)} onSave={onAddShift} />
@@ -4675,6 +4786,53 @@ function EditDeviceModal({isOpen, onClose, onSave, device, rooms}){
   );
 }
 
+function AddDoorModal({isOpen, onClose, onSave}){
+  const [roomName, setRoomName] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [err, setErr] = useState("");
+
+  if (!isOpen) return null;
+
+  const submit = async (e) => {
+    e.preventDefault();
+    if (!roomName.trim()) return;
+    setLoading(true);
+    setErr("");
+    try {
+      await onSave({ room_name: roomName.trim(), is_restricted: false });
+      setRoomName("");
+      onClose();
+    } catch(err) {
+      setErr(err.message || "Failed to add door");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="modal-backdrop">
+      <div className="modal-box">
+        <div style={{display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:18}}>
+          <div style={{fontSize:16, fontWeight:700}}>Add New Door / Entryway</div>
+          <button onClick={onClose} style={{background:"none", border:"none", cursor:"pointer", color:"var(--text-dim)"}}><Icon name="x" size={18}/></button>
+        </div>
+        {err && <div style={{color:"var(--rose)", fontSize:12.5, marginBottom:12}}>{err}</div>}
+        <form onSubmit={submit} style={{display:"flex", flexDirection:"column", gap:14}}>
+          <div>
+            <label style={{fontSize:12, color:"var(--text-dim)", display:"block", marginBottom:4}}>Door / Room Name</label>
+            <input required placeholder="e.g. Main Entrance, Server Room" value={roomName} onChange={e=>setRoomName(e.target.value)}
+              style={{width:"100%", padding:"8px 12px", borderRadius:8, border:"1px solid var(--border)", background:"var(--surface-2)", color:"var(--text)", fontSize:13.5}} />
+          </div>
+          <div style={{display:"flex", justifyContent:"flex-end", gap:8, marginTop:8}}>
+            <Button variant="ghost" onClick={onClose} disabled={loading}>Cancel</Button>
+            <Button variant="primary" type="submit" disabled={loading}>{loading ? "Adding..." : "Add Door"}</Button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
 function AddDepartmentModal({isOpen, onClose, onSave}){
   const [name, setName] = useState("");
   const [loading, setLoading] = useState(false);
@@ -5416,6 +5574,21 @@ function Shell(){
     await loadData();
   };
 
+  const handleAddRoom = async (roomData) => {
+    await apiCall("/api/rooms", "POST", roomData, token);
+    await loadData();
+  };
+
+  const handleDeleteRoom = async (roomId, roomName) => {
+    if (!confirm("Delete door '" + roomName + "'?")) return;
+    try {
+      await apiCall("/api/rooms/" + roomId, "DELETE", null, token);
+      await loadData();
+    } catch (err) {
+      alert(err.message || "Failed to delete door");
+    }
+  };
+
   const handleLogout = () => {
     sessionStorage.clear();
     setToken("");
@@ -5664,6 +5837,7 @@ function Shell(){
               shifts={shifts}
               holidays={holidays}
               rooms={rooms}
+              devices={devices}
               onAddDepartment={handleAddDepartment}
               onDeleteDepartment={handleDeleteDepartment}
               onAddRule={handleAddRule}
@@ -5672,6 +5846,8 @@ function Shell(){
               onDeleteShift={handleDeleteShift}
               onAddHoliday={handleAddHoliday}
               onDeleteHoliday={handleDeleteHoliday}
+              onAddRoom={handleAddRoom}
+              onDeleteRoom={handleDeleteRoom}
             />
           )}
         </div>

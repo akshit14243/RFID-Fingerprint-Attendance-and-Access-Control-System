@@ -263,8 +263,57 @@ router.post("/rooms", requireUser, requireAdmin, async (req, res, next) => {
     if (!s.success) return bad(res, s.error);
     res.status(201).json(
       await one("INSERT INTO rooms (room_name, is_restricted) VALUES ($1,$2) RETURNING *",
-        [s.data.room_name, s.data.is_restricted]),
+        [s.data.room_name.trim(), s.data.is_restricted]),
     );
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.put("/rooms/:id", requireUser, requireAdmin, async (req, res, next) => {
+  try {
+    const s = z.object({
+      room_name: z.string().min(1).optional(),
+      is_restricted: z.boolean().optional(),
+    }).safeParse(req.body);
+    if (!s.success) return bad(res, s.error);
+    const row = await one(
+      `UPDATE rooms SET
+         room_name     = COALESCE($2, room_name),
+         is_restricted = COALESCE($3, is_restricted)
+       WHERE id = $1 RETURNING *`,
+      [req.params.id, s.data.room_name?.trim() ?? null, s.data.is_restricted ?? null],
+    );
+    if (!row) return res.status(404).json({ error: "not_found" });
+    res.json(row);
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.delete("/rooms/:id", requireUser, requireAdmin, async (req, res, next) => {
+  try {
+    const roomId = parseInt(req.params.id, 10);
+    if (isNaN(roomId)) {
+      return res.status(400).json({ error: "invalid_id", message: "Invalid door ID" });
+    }
+    const devCount = await one("SELECT COUNT(*)::int AS count FROM devices WHERE room_id = $1", [roomId]);
+    if (devCount && devCount.count > 0) {
+      return res.status(400).json({
+        error: "room_has_devices",
+        message: `Cannot delete door: ${devCount.count} hardware reader(s) are currently mounted to it. Please reassign or delete the readers first.`,
+      });
+    }
+    const eventCount = await one("SELECT COUNT(*)::int AS count FROM access_events WHERE room_id = $1", [roomId]);
+    if (eventCount && eventCount.count > 0) {
+      return res.status(400).json({
+        error: "room_has_events",
+        message: `Cannot delete door: ${eventCount.count} access scan event(s) are recorded for this door in audit logs. Doors with audit history cannot be deleted.`,
+      });
+    }
+    const row = await one("DELETE FROM rooms WHERE id = $1 RETURNING id, room_name", [roomId]);
+    if (!row) return res.status(404).json({ error: "not_found", message: "Door not found or already deleted" });
+    res.json({ deleted: row.id, room_name: row.room_name });
   } catch (err) {
     next(err);
   }
