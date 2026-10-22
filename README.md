@@ -1,4 +1,4 @@
-# 🏢 RFID + Fingerprint Attendance & Access Control System
+# RFID + Fingerprint Attendance and Access Control System
 
 [![Node.js](https://img.shields.io/badge/Node.js-v18+-339933?style=flat&logo=nodedotjs&logoColor=white)](https://nodejs.org/)
 [![Express.js](https://img.shields.io/badge/Express.js-v4.19-000000?style=flat&logo=express&logoColor=white)](https://expressjs.com/)
@@ -8,43 +8,37 @@
 [![SSE](https://img.shields.io/badge/Realtime-Server--Sent%20Events%20(SSE)-FF6C37?style=flat)](https://developer.mozilla.org/en-US/docs/Web/API/Server-sent_events)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-An enterprise-grade, end-to-end IoT Access Control and Automated Attendance Management System. The platform connects physical edge hardware readers (**ESP32**, **PN532 RFID/NFC**, and **R307S Optical Fingerprint**) to a high-concurrency **Node.js/Express REST API**, an immutable append-only **PostgreSQL** audit ledger, and a reactive single-page **React Dashboard** with real-time live event streaming.
+An enterprise-grade, end-to-end IoT Access Control and Automated Attendance Management System. The platform connects physical edge hardware readers (**ESP32**, **PN532 RFID/NFC**, and **R307S Optical Fingerprint**) with a high-concurrency **Node.js/Express REST API**, an immutable append-only **PostgreSQL** audit ledger, and a reactive single-page **React Dashboard** with real-time live event streaming.
 
 ---
 
-## 📸 Visual Showcase & Dashboard Previews
+## 🎯 The Core Problem & Architectural Objectives
 
-### 1. Live Management Dashboard & Operational Overview
-The command center displays live occupancy count, system health, daily scan statistics, real-time clock synchronization, and 6-month comparative attendance trends.
+Traditional office badge systems record card interactions rather than human accountability. This architecture was designed by translating foundational security and operational pain points into explicit software specifications:
 
-![Dashboard Overview](docs/screenshots/dashboard_overview.png)
+| Operational Problem | Underlying Failure | Architectural Solution |
+|---|---|---|
+| **No exit tracking** | Attendance is only half-recorded | State machine determines direction (`IN` vs `OUT`) per event |
+| **No fire drill accounting** | Zero real-time visibility | Centralized server tracks live office occupancy in real time |
+| **Proxy / buddy punching** | A card UID is not a human | Multi-factor verification (RFID tap + optical fingerprint matching) |
+| **All cards unlock all doors** | Absence of authorization layers | Per-room, per-department policy engine; high-security zones require 2FA |
+| **Dangling credentials** | Stale permissions and contractor access | Time-delimited credentials with automatic expiration and instant revocation |
 
----
-
-### 2. Real-Time Scan Feeds & Live Activity Stream
-Sub-second live activity feeds powered by **Server-Sent Events (SSE)**. Scans are evaluated instantly by the decision engine and pushed directly to the dashboard with zero polling latency.
-
-![Live Scan Activity](docs/screenshots/live_scan_activity.png)
-
----
-
-### 3. Automated Attendance Analytics & Payroll CSV Export
-Daily attendance calculation computing first-in, last-out, total work hours, grace periods, and late arrival flags with one-click CSV export for payroll.
-
-![Attendance Management](docs/screenshots/attendance_management.png)
+> *Core Principle: A card swipe proves only that a plastic token touched a reader — not who carried it, not which direction they moved, and not whether they had authorization. This system establishes verifiable human identity and immutable auditability.*
 
 ---
 
-### 4. Installed Doors & Hardware Reader Registry
-Manage physical access points across rooms, monitor real-time reader health heartbeats, designation purposes (`DOOR` vs `ATTENDANCE`), and active biometric access rules.
+## 🏛 System Sketches & Architecture
 
-| Hardware Device Registry | Calendar & Historical Date Navigator |
-|:---:|:---:|
-| ![Hardware Devices](docs/screenshots/hardware_devices.png) | ![Date Filter Calendar](docs/screenshots/date_filter_calendar.png) |
+### System Architecture
+![System Architecture](images/system_architecture.jpg)
+
+### Door Decision Flow
+![Decision Flow](images/decision_flow.jpg)
 
 ---
 
-## 🏛 System Architecture & Data Flow
+### Data Flow Diagram
 
 ```
                                   ┌────────────────────────────────────────────────────────┐
@@ -75,74 +69,75 @@ Manage physical access points across rooms, monitor real-time reader health hear
     └─────────────────────────────────────────────────────┘   └──────────────────────────────────────────┘
 ```
 
-### Visual Architecture & Decision Engine Flow
-| High-Level Architecture | Decision Engine Flowchart |
-|:---:|:---:|
-| ![System Architecture](docs/screenshots/system_architecture.jpg) | ![Decision Flow](docs/screenshots/decision_flow.jpg) |
-
 ---
 
-## ✨ Key Capabilities
+## ✨ Key Capabilities & Engineering Highlights
 
-* **⚡ Sub-15ms Policy Decision Engine**:
+* **⚡ Sub-15ms Policy Decision Engine (`server/decision.js`)**:
   * Evaluates incoming RFID card UIDs and biometric fingerprint slots against 7 strict security checkpoints in milliseconds.
-  * Validates device activity, credential validity, revocation status, employee status, departmental rules, and biometric requirements.
-  * Emits explicit reason codes on denial (`NO_ACCESS_RULE`, `FINGERPRINT_REQUIRED`, `CREDENTIAL_REVOKED`, `UNKNOWN_CARD`).
+  * Checks device activity, credential validity, revocation status, employee active status, departmental rules, and biometric requirements.
+  * Returns explicit denial reason codes (`NO_ACCESS_RULE`, `FINGERPRINT_REQUIRED`, `CREDENTIAL_REVOKED`, `UNKNOWN_CARD`).
 
-* **📡 Real-Time Server-Sent Events (SSE)**:
-  * Eliminates heavy client polling via unidirectional, persistent HTTP connections.
-  * Broadcasts live door taps, occupancy adjustments, and hardware status updates to all active management dashboards instantly.
+* **📡 Real-Time Server-Sent Events (`server/routes/stream.js`)**:
+  * Broadcasts door taps, live room occupancy changes, and device heartbeats over persistent HTTP connections.
+  * Delivers sub-second updates to the management dashboard without client-side polling.
 
-* **🛡️ Tamper-Proof Append-Only Audit Trail**:
+* **🛡️ Append-Only Tamper-Proof Audit Ledger (`db/01_schema.sql`)**:
   * The `access_events` database table is strictly append-only.
-  * Protected by custom PostgreSQL database triggers (`trg_events_no_update`) that reject any `UPDATE` or `DELETE` query, guaranteeing legal audit and compliance integrity.
+  * Enforced by a custom PostgreSQL database trigger (`trg_events_no_update`) that raises exceptions on any `UPDATE` or `DELETE` statement, guaranteeing audit and compliance integrity.
 
-* **🚪 Installed Doors & Multi-Door Management**:
-  * Organize entryways into physical doors (e.g., *Main Entrance*, *Server Room*, *Hardware Lab*).
-  * Associate multiple hardware readers with designated operational purposes (`DOOR` entry/exit vs `ATTENDANCE` clock-in).
-  * Built-in safety guards preventing accidental deletion of doors with mounted readers or historical audit records.
+* **🚪 Multi-Door & Hardware Reader Management**:
+  * Organize entryways into physical access points (e.g., *Main Entrance*, *Server Room*, *Hardware Lab*).
+  * Associate hardware readers with specific purposes (`DOOR` entry/exit vs `ATTENDANCE` clock-in).
+  * Built-in safety checks prevent accidental deletion of doors with active mounted devices or audit history.
 
-* **👥 Employee & Dual-Factor Credential Vault**:
-  * Map staff members to 13.56 MHz RFID UIDs and optical fingerprint sensor slots.
-  * Instant credential revocation, expiration date control, and remote biometric enrollment workflow.
-
-* **⏰ Shift Scheduling & Automated Attendance Analytics**:
+* **⏰ Shift Schedules & Automated Attendance Calculation**:
   * Configure custom working hours, start/end windows, and grace periods (e.g., 15-minute late threshold).
   * Automated computation of daily first-in, last-out, total hours worked, and late flags via PostgreSQL `v_attendance_days` view.
-  * Corporate holiday calendar exemptions and single-click CSV payroll exports.
+  * Corporate holiday exemptions and single-click CSV export for payroll.
 
 * **🔌 Edge Hardware Resilience & Offline Caching**:
-  * Edge microcontrollers cache approved credentials in LittleFS flash memory.
-  * If the local network or Wi-Fi drops, door access continues uninterrupted and batch-syncs scan logs when connectivity resumes.
+  * Microcontrollers cache authorized credentials locally in LittleFS flash memory.
+  * If local Wi-Fi drops, door access continues offline and batch-syncs access logs upon reconnection.
 
 ---
 
-## 🛠 Tech Stack
+## 🛠 Key Hardware Decisions & Pinout
 
-| Domain | Technology | Description |
-|---|---|---|
-| **Backend** | **Node.js (v18+) & Express** | RESTful API, async decision engine, and SSE event streaming |
-| **Database** | **PostgreSQL 14+** | Relational schema, connection pooling (`pg`), triggers, and views |
-| **Frontend** | **React & Tailwind-style CSS** | Reactive SPA with live SSE data binding, zero build-step overhead |
-| **Edge Hardware** | **ESP32 Microcontroller** | 32-bit dual-core Wi-Fi & Bluetooth microcontroller |
-| **Peripherals** | **PN532 RFID / R307S Fingerprint** | 13.56MHz contactless reader & optical biometric sensor |
-| **Security** | **HMAC Tokens & Bcrypt** | Cryptographic token verification and salted password hashing |
-| **Validation** | **Zod** | Runtime request body schema validation |
+* **PN532 on UART2 (HSU)** at 115200 baud, DIP switches set to HSU mode. High-speed UART avoids I2C bus lockups.
+* **R307S Fingerprint on UART1** at its default 57600 baud.
+* **UART0 remains dedicated** to the USB serial console for runtime debugging and flashing.
+* **Avoided GPIO 34–39** (input-only pins, cannot drive relays) and **GPIO 6–11** (connected to SPI flash).
+
+### Pin Wiring Reference
+
+| Peripheral | Protocol | ESP32 Pins | Description |
+|---|---|---|---|
+| **PN532 RFID/NFC** | HSU (UART) | TX: `GPIO 16`, RX: `GPIO 17` | High-speed UART mode (DIP switch: `0 1`) |
+| **R307S Fingerprint** | Serial2 (UART) | TX: `GPIO 18`, RX: `GPIO 19` | 57600 default baud rate |
+| **Relay Module** | Digital Out | `GPIO 26` | Active LOW trigger for 12V maglock / door strike |
+| **Piezo Buzzer** | Digital Out | `GPIO 27` | Beep confirmation on allowed / warning on denied |
+| **Status LEDs** | Digital Out | Green: `GPIO 25`, Red: `GPIO 33` | Visual authorization indicators |
 
 ---
 
-## 📁 Repository Structure
+## 📁 Repository Layout
 
 ```
 ├── db/
 │   ├── 01_schema.sql            # Core PostgreSQL schema, enum types, triggers, views
 │   ├── 02_seed.sql              # Initial system seed data (sample employees, doors, credentials)
 │   └── 03_admin_entities.sql    # Shifts, departments, and holiday definitions
-├── docs/
-│   └── screenshots/             # High-resolution dashboard and architecture images
 ├── firmware/
-│   ├── esp32_test2.ino          # Full ESP32 edge controller firmware
+│   ├── esp32_test2.ino          # Complete ESP32 edge controller firmware
 │   └── esp32_pn532_r307s_...    # Pinout, buzzer, LED, and relay configuration
+├── images/
+│   ├── system_architecture.jpg  # System architecture sketch
+│   └── decision_flow.jpg        # Door decision logic flowchart
+├── notes/
+│   ├── reading-notes.md         # Architecture and hardware study notes
+│   ├── resources.md             # Protocols, library datasheets, and reference links
+│   └── wiring-and-baud.md       # Pinout selection rationale and serial configuration
 ├── server/
 │   ├── routes/
 │   │   ├── admin.js             # Staff, credentials, rules, doors, shifts, holidays
@@ -168,7 +163,7 @@ Manage physical access points across rooms, monitor real-time reader health hear
 
 ---
 
-## 🚀 Step-by-Step Installation & Setup
+## 🚀 Installation & Quick Start
 
 ### Prerequisites
 * **Node.js** (v18.0.0 or higher)
@@ -177,16 +172,7 @@ Manage physical access points across rooms, monitor real-time reader health hear
 
 ---
 
-### 1. Clone the Repository
-
-```bash
-git clone https://github.com/akshit14243/RFID-Fingerprint-Attendance-and-Access-Control-System.git
-cd RFID-Fingerprint-Attendance-and-Access-Control-System
-```
-
----
-
-### 2. Database Initialization
+### 1. Database Initialization
 
 Execute the database initialization scripts in sequence using `psql`:
 
@@ -203,7 +189,7 @@ psql -U postgres -f db/03_admin_entities.sql
 
 ---
 
-### 3. Backend Server Configuration
+### 2. Backend Server Setup
 
 Navigate to the `server/` directory and install dependencies:
 
@@ -212,7 +198,7 @@ cd server
 npm install
 ```
 
-Create a `.env` file inside the `server/` folder (or copy from `.env.example`):
+Create a `.env` file inside the `server/` directory:
 
 ```env
 # Database Credentials
@@ -231,7 +217,7 @@ DELETE_PASSWORD=ADMIN@DELETE#2026
 LEGACY_SYNC_ENABLED=false
 ```
 
-Start the server:
+Start the application:
 
 ```bash
 # Production mode
@@ -241,7 +227,7 @@ npm start
 node index.js
 ```
 
-The Web Console and API will now be live at:  
+The Web Administration Console will now be live at:  
 👉 **`http://localhost:3000`**
 
 ---
@@ -255,32 +241,9 @@ The Web Console and API will now be live at:
 
 ---
 
-## 📡 Hardware & Firmware Integration
-
-The backend provides high-performance adapter endpoints designed for edge microcontrollers:
-
-| Endpoint | Method | Purpose |
-|---|---|---|
-| `/access_control/authenticate.php` | `GET` | Authenticates scanned RFID UID or fingerprint slot against door access rules |
-| `/access_control/sync.php` | `GET` | Fetches active allow-list for LittleFS edge cache storage |
-| `/access_control/log_access.php` | `GET` | Edge hardware logs entry/exit scans with direction & timestamp |
-| `/api/hardware/scan` | `POST` | Native JSON payload scan endpoint for modern IoT readers |
-
-### ESP32 Pinout & Wiring Overview
-
-| Peripheral | Protocol | ESP32 Pins | Description |
-|---|---|---|---|
-| **PN532 RFID/NFC** | HSU (UART) | TX: `GPIO 16`, RX: `GPIO 17` | High-speed UART mode (DIP switch: `0 1`) |
-| **R307S Fingerprint** | Serial2 (UART) | TX: `GPIO 18`, RX: `GPIO 19` | 57600 default baud rate |
-| **Relay Module** | Digital Out | `GPIO 26` | Active LOW trigger for 12V maglock / door strike |
-| **Piezo Buzzer** | Digital Out | `GPIO 27` | Beep confirmation on allowed / warning on denied |
-| **Status LEDs** | Digital Out | Green: `GPIO 25`, Red: `GPIO 33` | Visual authorization indicators |
-
----
-
 ## 🧪 Testing Without Physical Hardware
 
-You can simulate device taps, edge caching, and offline batch syncs using the built-in test suite:
+You can simulate device taps, edge caching, and offline batch syncs using the built-in test runner:
 
 ```bash
 # Simulate 5 real-time authorized and denied taps
@@ -300,6 +263,7 @@ node tools/simulate_device.cjs --replay
 This project was engineered as part of the **Project Execution Program** at **ZenV Quantum, Hyderabad** (powered by **Zencube**).  
 * **Title:** *RFID + Fingerprint Attendance and Access Control System for Offices*  
 * **Credential ID:** `CERT-NAN-2026-ZRUN-0019-ZENV-2026SEP-ACCESSPRO-007`  
+* **Author:** Akshit Saini  
 
 ---
 
